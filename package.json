@@ -5,11 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "prisma generate && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "netlify:dev": "netlify dev",
-    "postinstall": "prisma generate"
+    "netlify:dev": "netlify dev"
   },
   "dependencies": {
     "@prisma/client": "^6.11.0",
