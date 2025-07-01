@@ -1,8 +1,7 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client/edge';
+import { PrismaClient } from '@prisma/client';
 import { withAccelerate } from '@prisma/extension-accelerate';
 import express from 'express';
-import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
 import cookie from 'cookie';
@@ -12,7 +11,6 @@ const prisma = new PrismaClient().$extends(withAccelerate());
 
 const app = express();
 app.use(express.json());
-app.use(cookieParser());
 app.use(cors({ origin: true, credentials: true }));
 
 // Logging middleware
@@ -169,6 +167,6 @@ app.get('/my-queues', async (req, res) => {
   }
 });
 
-const serverlessHandler = serverless(app);
+const serverlessHandler = serverless(app, { basePath: '/.netlify/functions/api' });
 export const handler = serverlessHandler;
 export default app;

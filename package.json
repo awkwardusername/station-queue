@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "prisma generate --no-engine && tsc -b && vite build",
+    "build": "prisma generate && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "netlify:dev": "netlify dev"
@@ -22,18 +22,14 @@
     "axios": "^1.10.0",
     "bootstrap": "^5.3.7",
     "cookie": "^1.0.2",
-    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",
     "express": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "serverless-http": "^3.2.0",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",
-    "uuid": "^11.1.0",
-    "ws": "^8.18.3"
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
