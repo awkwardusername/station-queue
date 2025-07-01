@@ -12,6 +12,8 @@ This is a Vite + React + TypeScript web application for managing queues at stati
 - Persons can view and pop the queue for their station.
 - Admin can create new stations.
 - Queue positions start from 100 for better user experience.
+- Position numbers are unique and never reused, ensuring accurate tracking.
+- Clean data management: all associated data is properly deleted when a station is removed.
 
 ## Getting Started
 

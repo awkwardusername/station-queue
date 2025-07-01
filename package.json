@@ -2,7 +2,7 @@
   "name": "station-queue",
   "private": true,
   "version": "0.0.0",
-  "type": "module",  "scripts": {
+  "type": "module",    "scripts": {
     "dev": "vite",
     "build": "prisma generate --no-engine && tsc -b && vite build",
     "lint": "eslint .",
@@ -10,7 +10,9 @@
     "netlify:dev": "netlify dev",
     "set-backend-ably-key": "node prisma/seed-ably-key.js",
     "set-frontend-ably-key": "node prisma/seed-frontend-ably-key.js",
-    "reset-queue-positions": "node prisma/reset-queue-positions.js"
+    "reset-queue-positions": "node prisma/reset-queue-positions.js",
+    "init-last-positions": "node prisma/initialize-last-positions.js",
+    "cleanup-orphaned-keys": "node prisma/cleanup-orphaned-position-keys.js"
   },
   "dependencies": {
     "@netlify/functions": "^4.1.8",

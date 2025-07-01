@@ -19,6 +19,42 @@ async function getConfigValue(key) {
   return config?.value;
 }
 
+// Helper to get and increment the last issued position for a station
+async function getNextPositionForStation(stationId) {
+  const positionKey = `lastPosition:${stationId}`;
+  
+  // Use a transaction to ensure we don't have race conditions
+  return prisma.$transaction(async (tx) => {
+    // Try to get the last position for this station
+    const lastPositionConfig = await tx.config.findUnique({ 
+      where: { key: positionKey } 
+    });
+    
+    let lastPosition;
+    if (!lastPositionConfig) {
+      // If we don't have a last position, start from 99 (so next position will be 100)
+      lastPosition = 99;
+      // Create the initial record
+      await tx.config.create({ 
+        data: { key: positionKey, value: String(lastPosition) }
+      });
+    } else {
+      lastPosition = parseInt(lastPositionConfig.value, 10);
+    }
+    
+    // Increment the position
+    const nextPosition = lastPosition + 1;
+    
+    // Update the last position in the database
+    await tx.config.update({
+      where: { key: positionKey },
+      data: { value: String(nextPosition) }
+    });
+    
+    return nextPosition;
+  });
+}
+
 // Helper to initialize Ably with the API key from the database
 async function initializeAbly() {
   try {
@@ -127,10 +163,21 @@ app.delete('/admin/stations/:id', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   const dbSecret = await getAdminSecret();
   if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
-  const { id } = req.params;
-  try {
-    await prisma.queue.deleteMany({ where: { stationId: id } });
+  const { id } = req.params;  try {
+    console.log(`Deleting station ${id} and all associated data...`);
+    
+    // Delete all queue entries for this station
+    const deletedQueue = await prisma.queue.deleteMany({ where: { stationId: id } });
+    console.log(`Deleted ${deletedQueue.count} queue entries`);
+    
+    // Delete the lastPosition config entry for this station
+    const positionKey = `lastPosition:${id}`;
+    const deletedConfig = await prisma.config.deleteMany({ where: { key: positionKey } });
+    console.log(`Deleted ${deletedConfig.count} config entries with key: ${positionKey}`);
+    
+    // Delete the station itself
     await prisma.station.delete({ where: { id } });
+    console.log(`Deleted station ${id}`);
     
     // Publish station deletion event
     await publishToChannel(
@@ -194,8 +241,7 @@ app.get('/stations', async (req, res) => {
 // User: join queue
 app.post('/queue/:stationId', async (req, res) => {
   const { stationId } = req.params;
-  const userId = req.userId;
-  try {
+  const userId = req.userId;  try {
     const station = await prisma.station.findUnique({ where: { id: stationId } });
     if (!station) return res.status(404).json({ error: 'Station not found' });
     const existing = await prisma.queue.findUnique({ where: { stationId_userId: { stationId, userId } } });
@@ -203,12 +249,9 @@ app.post('/queue/:stationId', async (req, res) => {
     
     if (existing) {
       position = existing.position;
-    } else {      const max = await prisma.queue.aggregate({
-        where: { stationId },
-        _max: { position: true }
-      });
-      // Start position from 100 instead of 1
-      position = (max._max.position || 99) + 1;
+    } else {
+      // Get a new, never-reused position for this user
+      position = await getNextPositionForStation(stationId);
       await prisma.queue.create({ data: { stationId, userId, position } });
     }
     
