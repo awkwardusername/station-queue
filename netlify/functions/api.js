@@ -1,39 +1,17 @@
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const cors = require('cors');
-const { randomUUID } = require('crypto');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
+import 'dotenv/config';
+import { PrismaClient } from '@prisma/client/edge';
+import { withAccelerate } from '@prisma/extension-accelerate';
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import { randomUUID } from 'crypto';
+
+const prisma = new PrismaClient().$extends(withAccelerate());
 
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
 app.use(cors({ origin: true, credentials: true }));
-
-// SQLite setup (in /tmp for Netlify Functions)
-const dbPath = process.env.NETLIFY ? '/tmp/queue.db' : path.join(__dirname, '../../queue.db');
-if (!fs.existsSync(dbPath)) {
-  fs.writeFileSync(dbPath, '');
-}
-const db = new sqlite3.Database(dbPath);
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS stations (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    managerId TEXT NOT NULL
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS queues (
-    stationId TEXT,
-    userId TEXT,
-    position INTEGER,
-    PRIMARY KEY (stationId, userId)
-  )`);
-});
-
-const ADMIN_SECRET = process.env.ADMIN_SECRET;
-
-console.log("ADMIN_SECRET from env:", process.env.ADMIN_SECRET);
 
 app.use((req, res, next) => {
   if (!req.cookies.userId) {
@@ -42,107 +20,133 @@ app.use((req, res, next) => {
   next();
 });
 
-app.post('/admin/stations', (req, res) => {
+// Helper to get admin secret from Config table
+async function getAdminSecret() {
+  const config = await prisma.config.findUnique({ where: { key: 'ADMIN_SECRET' } });
+  return config?.value;
+}
+
+// Admin: create station
+app.post('/admin/stations', async (req, res) => {
   const { secret, name } = req.body;
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Forbidden' });
+  const dbSecret = await getAdminSecret();
+  if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
   if (!name) return res.status(400).json({ error: 'Name required' });
   const id = randomUUID();
   const managerId = randomUUID();
-  db.run('INSERT INTO stations (id, name, managerId) VALUES (?, ?, ?)', [id, name, managerId], function (err) {
-    if (err) {
-      return res.status(500).json({ error: 'DB error', details: err.message });
-    }
-    db.get('SELECT * FROM stations WHERE id = ?', [id], (err, row) => {
-      if (err) return res.status(500).json({ error: 'DB error', details: err.message });
-      res.json(row);
+  try {
+    const station = await prisma.station.create({
+      data: { id, name, managerId }
     });
-  });
+    res.json(station);
+  } catch (err) {
+    res.status(500).json({ error: 'DB error', details: err.message });
+  }
 });
 
-app.delete('/admin/stations/:id', (req, res) => {
+// Admin: delete station
+app.delete('/admin/stations/:id', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Forbidden' });
+  const dbSecret = await getAdminSecret();
+  if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
   const { id } = req.params;
-  db.run('DELETE FROM stations WHERE id = ?', [id], function (err) {
-    if (err) return res.status(500).json({ error: 'DB error' });
-    db.run('DELETE FROM queues WHERE stationId = ?', [id], () => {
-      res.json({ success: true });
-    });
-  });
+  try {
+    await prisma.queue.deleteMany({ where: { stationId: id } });
+    await prisma.station.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'DB error' });
+  }
 });
 
-app.get('/stations', (req, res) => {
-  // If x-admin-secret header is present, require it to be correct for admin panel
+// List stations
+app.get('/stations', async (req, res) => {
   const adminSecret = req.headers['x-admin-secret'];
   if (adminSecret !== undefined) {
-    if (adminSecret !== ADMIN_SECRET) return res.status(403).json({ error: 'Forbidden' });
+    const dbSecret = await getAdminSecret();
+    if (adminSecret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
   }
-  db.all('SELECT * FROM stations', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: 'DB error' });
-    res.json(rows);
-  });
+  try {
+    const stations = await prisma.station.findMany();
+    res.json(stations);
+  } catch (err) {
+    res.status(500).json({ error: 'DB error' });
+  }
 });
 
-app.post('/queue/:stationId', (req, res) => {
+// User: join queue
+app.post('/queue/:stationId', async (req, res) => {
   const { stationId } = req.params;
   const userId = req.cookies.userId;
-  db.get('SELECT * FROM stations WHERE id = ?', [stationId], (err, station) => {
-    if (err || !station) return res.status(404).json({ error: 'Station not found' });
-    db.get('SELECT * FROM queues WHERE stationId = ? AND userId = ?', [stationId, userId], (err, row) => {
-      if (row) {
-        db.get('SELECT position FROM queues WHERE stationId = ? AND userId = ?', [stationId, userId], (err, posRow) => {
-          res.json({ queueNumber: posRow ? posRow.position : null });
-        });
-      } else {
-        db.get('SELECT MAX(position) as maxPos FROM queues WHERE stationId = ?', [stationId], (err, maxRow) => {
-          const position = (maxRow?.maxPos || 0) + 1;
-          db.run('INSERT INTO queues (stationId, userId, position) VALUES (?, ?, ?)', [stationId, userId, position], err => {
-            res.json({ queueNumber: position });
-          });
-        });
-      }
-    });
-  });
+  try {
+    const station = await prisma.station.findUnique({ where: { id: stationId } });
+    if (!station) return res.status(404).json({ error: 'Station not found' });
+    const existing = await prisma.queue.findUnique({ where: { stationId_userId: { stationId, userId } } });
+    if (existing) {
+      res.json({ queueNumber: existing.position });
+    } else {
+      const max = await prisma.queue.aggregate({
+        where: { stationId },
+        _max: { position: true }
+      });
+      const position = (max._max.position || 0) + 1;
+      await prisma.queue.create({ data: { stationId, userId, position } });
+      res.json({ queueNumber: position });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'DB error' });
+  }
 });
 
-app.get('/queue/:stationId', (req, res) => {
+// Person: view queue
+app.get('/queue/:stationId', async (req, res) => {
   const { stationId } = req.params;
   const managerId = req.query.managerId;
-  db.get('SELECT * FROM stations WHERE id = ?', [stationId], (err, station) => {
-    if (err || !station || station.managerId !== managerId) return res.status(403).json({ error: 'Forbidden' });
-    db.all('SELECT userId, position FROM queues WHERE stationId = ? ORDER BY position', [stationId], (err, rows) => {
-      res.json({ queue: rows.map(r => ({ user_id: r.userId, position: r.position })) });
+  try {
+    const station = await prisma.station.findUnique({ where: { id: stationId } });
+    if (!station || station.managerId !== managerId) return res.status(403).json({ error: 'Forbidden' });
+    const queue = await prisma.queue.findMany({
+      where: { stationId },
+      orderBy: { position: 'asc' }
     });
-  });
+    res.json({ queue: queue.map(r => ({ user_id: r.userId, position: r.position })) });
+  } catch (err) {
+    res.status(500).json({ error: 'DB error' });
+  }
 });
 
-app.post('/queue/:stationId/pop', (req, res) => {
+// Person: pop queue
+app.post('/queue/:stationId/pop', async (req, res) => {
   const { stationId } = req.params;
   const managerId = req.body.managerId;
-  db.get('SELECT * FROM stations WHERE id = ?', [stationId], (err, station) => {
-    if (err || !station || station.managerId !== managerId) return res.status(403).json({ error: 'Forbidden' });
-    db.get('SELECT * FROM queues WHERE stationId = ? ORDER BY position LIMIT 1', [stationId], (err, row) => {
-      if (!row) return res.json({ popped: null });
-      db.run('DELETE FROM queues WHERE stationId = ? AND userId = ?', [stationId, row.userId], err => {
-        res.json({ popped: row.userId });
-      });
+  try {
+    const station = await prisma.station.findUnique({ where: { id: stationId } });
+    if (!station || station.managerId !== managerId) return res.status(403).json({ error: 'Forbidden' });
+    const first = await prisma.queue.findFirst({
+      where: { stationId },
+      orderBy: { position: 'asc' }
     });
-  });
+    if (!first) return res.json({ popped: null });
+    await prisma.queue.delete({ where: { stationId_userId: { stationId, userId: first.userId } } });
+    res.json({ popped: first.userId });
+  } catch (err) {
+    res.status(500).json({ error: 'DB error' });
+  }
 });
 
-app.get('/my-queues', (req, res) => {
+// User: view all queues
+app.get('/my-queues', async (req, res) => {
   const userId = req.cookies.userId;
-  db.all('SELECT q.stationId, s.name as stationName, q.position FROM queues q JOIN stations s ON q.stationId = s.id WHERE q.userId = ? ORDER BY q.position', [userId], (err, rows) => {
-    if (err) return res.status(500).json({ error: 'DB error' });
-    res.json(rows.map(r => ({ stationId: r.stationId, stationName: r.stationName, queueNumber: r.position })));
-  });
+  try {
+    const queues = await prisma.queue.findMany({
+      where: { userId },
+      include: { station: true },
+      orderBy: { position: 'asc' }
+    });
+    res.json(queues.map(q => ({ stationId: q.stationId, stationName: q.station.name, queueNumber: q.position })));
+  } catch (err) {
+    res.status(500).json({ error: 'DB error' });
+  }
 });
 
-if (require.main === module) {
-  const port = process.env.PORT || 5000;
-  app.listen(port, () => {
-    console.log(`API server listening on http://localhost:${port}`);
-  });
-}
-
-module.exports.handler = app;
+export default app;

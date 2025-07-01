@@ -1,0 +1,34 @@
+// Prisma schema for station-queue app (converted from previous SQLite schema)
+// Uses PostgreSQL or SQLite depending on your DATABASE_URL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // or "sqlite" if using SQLite
+  url      = env("DATABASE_URL")
+}
+
+model Station {
+  id        String   @id @default(uuid())
+  name      String
+  managerId String
+  queue     Queue[]
+}
+
+model Queue {
+  stationId String
+  userId    String
+  position  Int
+  station   Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@id([stationId, userId])
+  @@unique([stationId, position])
+  @@index([userId])
+}
+
+model Config {
+  key   String @id
+  value String
+}
