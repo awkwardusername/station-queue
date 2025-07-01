@@ -19,13 +19,50 @@ export const EVENT_NAMES = {
 let ably: Ably.Realtime | null = null;
 let clientId = '';
 
+// Helper function to determine API base URL (duplicated from api.ts to avoid circular dependencies)
+const getApiBaseUrl = () => {
+  if (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.port === '5173'
+  ) {
+    return 'http://localhost:5000';
+  }
+  return '/.netlify/functions/api';
+};
+
+// Get Ably API key from the backend
+export const getAblyApiKey = async () => {
+  try {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/config/ably-key`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch Ably API key');
+    }
+    const data = await response.json();
+    return data.key;
+  } catch (error) {
+    console.error('Error fetching Ably API key:', error);
+    return null;
+  }
+};
+
 // Initialize the Ably client
-export const initAbly = (userId: string) => {
+export const initAbly = async (userId: string) => {
   if (ably) return ably;
   
   clientId = userId;
+  
+  // Get the Ably API key from the backend
+  const apiKey = await getAblyApiKey();
+  if (!apiKey) {
+    console.error('Failed to initialize Ably: No API key available');
+    return null;
+  }
+  
   ably = new Ably.Realtime({
-    key: import.meta.env.VITE_ABLY_API_KEY || '',
+    key: apiKey,
     clientId,
   });
 
@@ -33,58 +70,81 @@ export const initAbly = (userId: string) => {
 };
 
 // Get the Ably client (initialize if needed)
-export const getAbly = (userId: string) => {
-  if (!ably) return initAbly(userId);
+export const getAbly = async (userId: string) => {
+  if (!ably) return await initAbly(userId);
   return ably;
 };
 
 // Subscribe to a channel
-export const subscribeToChannel = (channelName: string, eventName: string, callback: (message: any) => void) => {
-  if (!ably) {
-    console.error('Ably not initialized');
+export const subscribeToChannel = async (
+  channelName: string, 
+  eventName: string, 
+  callback: (message: unknown) => void
+): Promise<() => void> => {
+  try {
+    // Make sure Ably is initialized
+    if (!ably) {
+      const userId = clientId || localStorage.getItem('userId') || '';
+      ably = await initAbly(userId);
+      if (!ably) {
+        console.error('Failed to initialize Ably');
+        return () => {}; // Return empty unsubscribe function
+      }
+    }
+
+    console.log(`Subscribing to ${channelName} channel for ${eventName} events`);
+    const channel = ably.channels.get(channelName);
+    channel.subscribe(eventName, (message) => {
+      console.log(`Received on ${channelName}:${eventName}`, message.data);
+      callback(message.data);
+    });
+
+    // Return unsubscribe function
+    return () => {
+      console.log(`Unsubscribing from ${channelName}:${eventName}`);
+      channel.unsubscribe(eventName, callback);
+    };
+  } catch (error) {
+    console.error(`Error subscribing to ${channelName}:${eventName}:`, error);
     return () => {}; // Return empty unsubscribe function
   }
-
-  console.log(`Subscribing to ${channelName} channel for ${eventName} events`);
-  const channel = ably.channels.get(channelName);
-  channel.subscribe(eventName, (message) => {
-    console.log(`Received on ${channelName}:${eventName}`, message.data);
-    callback(message.data);
-  });
-
-  // Return unsubscribe function
-  return () => {
-    console.log(`Unsubscribing from ${channelName}:${eventName}`);
-    channel.unsubscribe(eventName, callback);
-  };
 };
 
 // Publish to a channel
-export const publishToChannel = (channelName: string, eventName: string, data: any) => {
-  if (!ably) {
-    console.error('Ably not initialized');
-    return Promise.reject('Ably not initialized');
-  }
+export const publishToChannel = async (channelName: string, eventName: string, data: unknown) => {
+  try {
+    // Make sure Ably is initialized
+    if (!ably) {
+      const userId = clientId || localStorage.getItem('userId') || '';
+      ably = await initAbly(userId);
+      if (!ably) {
+        throw new Error('Failed to initialize Ably');
+      }
+    }
 
-  const channel = ably.channels.get(channelName);
-  return channel.publish(eventName, data);
+    const channel = ably.channels.get(channelName);
+    return await channel.publish(eventName, data);
+  } catch (error) {
+    console.error(`Error publishing to ${channelName}:${eventName}:`, error);
+    throw error;
+  }
 };
 
 // Helper to subscribe to queue updates for a specific station
-export const subscribeToQueueUpdates = (stationId: string, callback: (data: any) => void) => {
+export const subscribeToQueueUpdates = async (stationId: string, callback: (data: unknown) => void) => {
   const channelName = CHANNEL_NAMES.QUEUE(stationId);
-  return subscribeToChannel(channelName, EVENT_NAMES.QUEUE_UPDATE, callback);
+  return await subscribeToChannel(channelName, EVENT_NAMES.QUEUE_UPDATE, callback);
 };
 
 // Helper to subscribe to station updates
-export const subscribeToStationUpdates = (callback: (data: any) => void) => {
-  return subscribeToChannel(CHANNEL_NAMES.STATIONS, EVENT_NAMES.STATION_UPDATE, callback);
+export const subscribeToStationUpdates = async (callback: (data: unknown) => void) => {
+  return await subscribeToChannel(CHANNEL_NAMES.STATIONS, EVENT_NAMES.STATION_UPDATE, callback);
 };
 
 // Helper to subscribe to my queue updates
-export const subscribeToMyQueueUpdates = (userId: string, callback: (data: any) => void) => {
+export const subscribeToMyQueueUpdates = async (userId: string, callback: (data: unknown) => void) => {
   const channelName = CHANNEL_NAMES.MY_QUEUES(userId);
-  return subscribeToChannel(channelName, EVENT_NAMES.QUEUE_UPDATE, callback);
+  return await subscribeToChannel(channelName, EVENT_NAMES.QUEUE_UPDATE, callback);
 };
 
 // Close the Ably connection when no longer needed

@@ -3,20 +3,27 @@ import api from './api';
 import React, { useState, useEffect } from 'react';
 import { initAbly, subscribeToChannel, CHANNEL_NAMES, EVENT_NAMES } from './ablyUtils';
 
-const AdminPanel: React.FC = () => {
-  const [secret, setSecret] = useState('');
+const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
   const [name, setName] = useState('');
   const [result, setResult] = useState<{ id: string; name: string; managerId: string } | null>(null);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [stations, setStations] = useState<Array<{ id: string; name: string; managerId?: string }>>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-
   // Initialize Ably
   useEffect(() => {
     const userId = localStorage.getItem('userId') || '';
     if (userId) {
-      initAbly(userId);
+      const initializeAbly = async () => {
+        try {
+          await initAbly(userId);
+        } catch (error) {
+          console.error('Error initializing Ably:', error);
+        }
+      };
+      
+      initializeAbly();
     }
   }, []);
 
@@ -32,6 +39,7 @@ const AdminPanel: React.FC = () => {
 
   const tryAuthenticate = async () => {
     setError('');
+    setSuccess('');
     setLoading(true);
     try {
       await api.get('/stations', { headers: { 'x-admin-secret': secret } });
@@ -47,6 +55,7 @@ const AdminPanel: React.FC = () => {
 
   const createStation = async () => {
     setError('');
+    setSuccess('');
     setResult(null);
     setLoading(true);
     try {
@@ -69,6 +78,7 @@ const AdminPanel: React.FC = () => {
 
   const deleteStation = async (id: string) => {
     setError('');
+    setSuccess('');
     setLoading(true);
     try {
       await api.delete(`/admin/stations/${id}`, { headers: { 'x-admin-secret': secret } });
@@ -86,26 +96,36 @@ const AdminPanel: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) return;
     
-    // Subscribe to station creation
-    const createUnsubscribe = subscribeToChannel(
-      CHANNEL_NAMES.STATIONS,
-      EVENT_NAMES.STATION_CREATE,
-      () => fetchStations(secret)
-    );
+    let createUnsubscribe: (() => void) = () => {};
+    let deleteUnsubscribe: (() => void) = () => {};
     
-    // Subscribe to station deletion
-    const deleteUnsubscribe = subscribeToChannel(
-      CHANNEL_NAMES.STATIONS,
-      EVENT_NAMES.STATION_DELETE,
-      () => fetchStations(secret)
-    );
+    const setupSubscriptions = async () => {
+      try {
+        // Subscribe to station creation
+        createUnsubscribe = await subscribeToChannel(
+          CHANNEL_NAMES.STATIONS,
+          EVENT_NAMES.STATION_CREATE,
+          () => fetchStations(secret)
+        );
+        
+        // Subscribe to station deletion
+        deleteUnsubscribe = await subscribeToChannel(
+          CHANNEL_NAMES.STATIONS,
+          EVENT_NAMES.STATION_DELETE,
+          () => fetchStations(secret)
+        );
+      } catch (error) {
+        console.error('Error setting up subscriptions:', error);
+      }
+    };
+    
+    setupSubscriptions();
     
     return () => {
       createUnsubscribe();
       deleteUnsubscribe();
     };
   }, [isAuthenticated, secret]);
-
   if (!isAuthenticated) {
     return (
       <div className="admin-panel app-center">
@@ -163,7 +183,10 @@ const AdminPanel: React.FC = () => {
         <button className="btn btn-primary mb-3 w-100 w-md-auto" onClick={createStation} disabled={loading || !secret || !name}>
           {loading ? 'Creating...' : 'Create Station'}
         </button>
+  
+        
         {error && <div className="alert alert-danger mt-2">{error}</div>}
+        {success && <div className="alert alert-success mt-2">{success}</div>}
         {result && (
           <div className="alert alert-success mt-2">
             <div>Station created!</div>

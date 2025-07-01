@@ -22,7 +22,6 @@ const UserQueue: React.FC = () => {
   const [myQueues, setMyQueues] = useState<QueueItem[]>([]);
   const [userId, setUserId] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-
   // Initialize Ably and get userId
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId') || '';
@@ -30,7 +29,16 @@ const UserQueue: React.FC = () => {
     setUserId(storedUserId);
     
     if (storedUserId) {
-      initAbly(storedUserId);
+      const initializeAbly = async () => {
+        try {
+          await initAbly(storedUserId);
+          console.log('UserQueue: Ably initialized successfully');
+        } catch (error) {
+          console.error('UserQueue: Failed to initialize Ably:', error);
+        }
+      };
+      
+      initializeAbly();
     }
   }, []);
 
@@ -98,42 +106,54 @@ const UserQueue: React.FC = () => {
     
     console.log('UserQueue: Setting up Ably subscriptions for userId', userId);
     
-    // Subscribe to station updates (creation, deletion, updates)
-    const stationsUnsubscribe = subscribeToChannel(
-      CHANNEL_NAMES.STATIONS,
-      EVENT_NAMES.STATION_CREATE,
-      (data) => {
-        console.log('UserQueue: Station created:', data);
-        fetchStations();
-      }
-    );
+    let stationsUnsubscribe: (() => void) = () => {};
+    let stationsDeleteUnsubscribe: (() => void) = () => {};
+    let myQueuesUnsubscribe: (() => void) = () => {};
     
-    const stationsDeleteUnsubscribe = subscribeToChannel(
-      CHANNEL_NAMES.STATIONS,
-      EVENT_NAMES.STATION_DELETE,
-      (data) => {
-        console.log('UserQueue: Station deleted:', data);
-        fetchStations();
-      }
-    );
-    
-    // Subscribe to my queue updates
-    const myQueuesUnsubscribe = subscribeToMyQueueUpdates(userId, (queueData) => {
-      console.log('UserQueue: Received my queues update via Ably:', queueData);
-      
-      if (Array.isArray(queueData)) {
-        setMyQueues(queueData);
-        setLastUpdate(new Date());
+    const setupSubscriptions = async () => {
+      try {
+        // Subscribe to station updates (creation, deletion, updates)
+        stationsUnsubscribe = await subscribeToChannel(
+          CHANNEL_NAMES.STATIONS,
+          EVENT_NAMES.STATION_CREATE,
+          (data) => {
+            console.log('UserQueue: Station created:', data);
+            fetchStations();
+          }
+        );
         
-        // Update queue number if needed
-        if (selected) {
-          const found = queueData.find(q => q.stationId === selected);
-          setQueueNumber(found ? found.queueNumber : null);
-        }
-      } else {
-        console.error('UserQueue: Received invalid queue data format:', queueData);
+        stationsDeleteUnsubscribe = await subscribeToChannel(
+          CHANNEL_NAMES.STATIONS,
+          EVENT_NAMES.STATION_DELETE,
+          (data) => {
+            console.log('UserQueue: Station deleted:', data);
+            fetchStations();
+          }
+        );
+        
+        // Subscribe to my queue updates
+        myQueuesUnsubscribe = await subscribeToMyQueueUpdates(userId, (queueData) => {
+          console.log('UserQueue: Received my queues update via Ably:', queueData);
+          
+          if (Array.isArray(queueData)) {
+            setMyQueues(queueData);
+            setLastUpdate(new Date());
+            
+            // Update queue number if needed
+            if (selected) {
+              const found = queueData.find(q => q.stationId === selected);
+              setQueueNumber(found ? found.queueNumber : null);
+            }
+          } else {
+            console.error('UserQueue: Received invalid queue data format:', queueData);
+          }
+        });
+      } catch (error) {
+        console.error('UserQueue: Error setting up subscriptions:', error);
       }
-    });
+    };
+    
+    setupSubscriptions();
     
     return () => {
       stationsUnsubscribe();

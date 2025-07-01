@@ -10,10 +10,31 @@ import * as Ably from 'ably';
 
 const prisma = new PrismaClient().$extends(withAccelerate());
 
-// Initialize Ably
-const ably = new Ably.Rest({
-  key: process.env.ABLY_API_KEY,
-});
+// Initialize Ably with null - we'll set it once we get the API key from the database
+let ably = null;
+
+// Helper to get configuration values from the Config table
+async function getConfigValue(key) {
+  const config = await prisma.config.findUnique({ where: { key } });
+  return config?.value;
+}
+
+// Helper to initialize Ably with the API key from the database
+async function initializeAbly() {
+  try {
+    const apiKey = await getConfigValue('ABLY_API_KEY');
+    if (!apiKey) {
+      console.error('ABLY_API_KEY not found in database. Real-time updates will not work.');
+      return null;
+    }
+    
+    console.log('Initializing Ably with API key from database');
+    return new Ably.Rest({ key: apiKey });
+  } catch (error) {
+    console.error('Error initializing Ably:', error);
+    return null;
+  }
+}
 
 // Channel and event names (keep in sync with frontend)
 const CHANNEL_NAMES = {
@@ -31,7 +52,12 @@ const EVENT_NAMES = {
 };
 
 // Helper to publish to Ably channels
-const publishToChannel = (channelName, eventName, data) => {
+const publishToChannel = async (channelName, eventName, data) => {
+  if (!ably) {
+    ably = await initializeAbly();
+    if (!ably) return Promise.reject('Ably not initialized');
+  }
+  
   const channel = ably.channels.get(channelName);
   return channel.publish(eventName, data);
 };
@@ -66,8 +92,7 @@ app.use((req, res, next) => {
 
 // Helper to get admin secret from Config table
 async function getAdminSecret() {
-  const config = await prisma.config.findUnique({ where: { key: 'ADMIN_SECRET' } });
-  return config?.value;
+  return getConfigValue('ADMIN_SECRET');
 }
 
 // Admin: create station
@@ -116,6 +141,22 @@ app.delete('/admin/stations/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'DB error' });
+  }
+});
+
+
+
+// Get Ably API key for client-side initialization
+app.get('/config/ably-key', async (req, res) => {
+  try {
+    const apiKey = await getConfigValue('ABLY_API_KEY');
+    if (!apiKey) {
+      return res.status(404).json({ error: 'Ably API key not found' });
+    }
+    res.json({ key: apiKey });
+  } catch (err) {
+    console.error('Error retrieving Ably API key:', err);
+    res.status(500).json({ error: 'Error retrieving configuration' });
   }
 });
 
