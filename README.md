@@ -32,6 +32,10 @@ This is a Vite + React + TypeScript web application for managing queues at stati
 - Connect frontend to backend.
 - Add cookie-based user tracking.
 
+## Real-Time Updates
+
+This application uses Ably for real-time updates. See [ABLY_SETUP.md](./ABLY_SETUP.md) for detailed instructions on setting up the Ably API keys.
+
 ---
 
 This project is a work in progress. See `.github/copilot-instructions.md` for Copilot customization.

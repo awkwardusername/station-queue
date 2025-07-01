@@ -8,7 +8,9 @@
     "build": "prisma generate --no-engine && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "netlify:dev": "netlify dev"
+    "netlify:dev": "netlify dev",
+    "set-backend-ably-key": "node prisma/seed-ably-key.js",
+    "set-frontend-ably-key": "node prisma/seed-frontend-ably-key.js"
   },
   "dependencies": {
     "@netlify/functions": "^4.1.8",

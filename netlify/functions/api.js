@@ -22,13 +22,14 @@ async function getConfigValue(key) {
 // Helper to initialize Ably with the API key from the database
 async function initializeAbly() {
   try {
+    // Always use the backend key for server-side operations
     const apiKey = await getConfigValue('ABLY_API_KEY');
     if (!apiKey) {
       console.error('ABLY_API_KEY not found in database. Real-time updates will not work.');
       return null;
     }
     
-    console.log('Initializing Ably with API key from database');
+    console.log('Initializing Ably with backend API key from database');
     return new Ably.Rest({ key: apiKey });
   } catch (error) {
     console.error('Error initializing Ably:', error);
@@ -149,19 +150,23 @@ app.delete('/admin/stations/:id', async (req, res) => {
 // Get Ably API key for client-side initialization
 app.get('/config/ably-key', async (req, res) => {
   try {
-    const apiKey = await getConfigValue('ABLY_API_KEY');
+    // Check if this is a frontend request (use the client-side key)
+    const isFrontend = req.query.frontend === 'true';
+    const keyName = isFrontend ? 'VITE_ABLY_API_KEY' : 'ABLY_API_KEY';
+    
+    const apiKey = await getConfigValue(keyName);
     if (!apiKey) {
-      console.error('ABLY_API_KEY not found in database. Check your configuration.');
-      return res.status(404).json({ error: 'Ably API key not found' });
+      console.error(`${keyName} not found in database. Check your configuration.`);
+      return res.status(404).json({ error: `Ably API key (${keyName}) not found` });
     }
     
     // Only return the key value, not the entire key
     const keyParts = apiKey.split(':');
     if (keyParts.length === 2) {
       // Return a partially masked key for logging
-      console.log(`Serving Ably API key: ${keyParts[0].substring(0, 4)}...`);
+      console.log(`Serving ${keyName}: ${keyParts[0].substring(0, 4)}...`);
     } else {
-      console.log('Serving Ably API key (format unknown)');
+      console.log(`Serving ${keyName} (format unknown)`);
     }
     
     res.json({ key: apiKey });
@@ -268,7 +273,19 @@ app.get('/queue/:stationId', async (req, res) => {
 // Person: pop queue
 app.post('/queue/:stationId/pop', async (req, res) => {
   const { stationId } = req.params;
-  const managerId = req.body.managerId;
+  let managerId = req.body.managerId;
+
+  // Handle Buffer body (Netlify issue)
+  if (typeof req.body === 'object' && Buffer.isBuffer(req.body)) {
+    try {
+      const parsed = JSON.parse(req.body.toString('utf8'));
+      managerId = parsed.managerId;
+      console.log('Pop Queue Debug: Parsed managerId from Buffer', { parsed });
+    } catch (e) {
+      console.log('Pop Queue Debug: Failed to parse Buffer body', { error: e });
+    }
+  }
+
   console.log('Pop Queue Debug:', {
     stationId,
     incomingManagerId: managerId,

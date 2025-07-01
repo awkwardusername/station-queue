@@ -35,7 +35,8 @@ const getApiBaseUrl = () => {
 export const getAblyApiKey = async (retries = 3, delay = 1000): Promise<string | null> => {
   try {
     const baseUrl = getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/config/ably-key`);
+    // Explicitly request the frontend key
+    const response = await fetch(`${baseUrl}/config/ably-key?frontend=true`);
     
     if (!response.ok) {
       if (retries > 0) {
