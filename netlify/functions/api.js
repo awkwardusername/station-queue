@@ -1,5 +1,7 @@
+const dotenv = require('dotenv');
+dotenv.config();
+
 const express = require('express');
-const serverless = require('netlify-express');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const { randomUUID } = require('crypto');
@@ -41,7 +43,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// ...existing Express routes from server.js...
 app.post('/admin/stations', (req, res) => {
   const { secret, name } = req.body;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'Forbidden' });
@@ -72,6 +73,11 @@ app.delete('/admin/stations/:id', (req, res) => {
 });
 
 app.get('/stations', (req, res) => {
+  // If x-admin-secret header is present, require it to be correct for admin panel
+  const adminSecret = req.headers['x-admin-secret'];
+  if (adminSecret !== undefined) {
+    if (adminSecret !== ADMIN_SECRET) return res.status(403).json({ error: 'Forbidden' });
+  }
   db.all('SELECT * FROM stations', [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'DB error' });
     res.json(rows);
@@ -133,4 +139,11 @@ app.get('/my-queues', (req, res) => {
   });
 });
 
-module.exports.handler = serverless(app);
+if (require.main === module) {
+  const port = process.env.PORT || 5000;
+  app.listen(port, () => {
+    console.log(`API server listening on http://localhost:${port}`);
+  });
+}
+
+module.exports.handler = app;

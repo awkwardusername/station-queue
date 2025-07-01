@@ -2,13 +2,16 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import api from './api';
 
+interface Station { id: string; name: string; }
+
 const PersonQueue: React.FC = () => {
-  const [stationId, setStationId] = useState('');
-  const [managerId, setManagerId] = useState('');
+  const [stationId, setStationId] = useState(() => localStorage.getItem('personStationId') || '');
+  const [managerId, setManagerId] = useState(() => localStorage.getItem('personManagerId') || '');
   const [queue, setQueue] = useState<{ user_id: string; position: number }[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [popped, setPopped] = useState<string | null>(null);
+  const [stations, setStations] = useState<Station[]>([]);
 
   const fetchQueue = useCallback(async () => {
     setError('');
@@ -54,10 +57,37 @@ const PersonQueue: React.FC = () => {
     };
   }, [stationId, managerId, fetchQueue]);
 
+  useEffect(() => {
+    localStorage.setItem('personStationId', stationId);
+  }, [stationId]);
+
+  useEffect(() => {
+    localStorage.setItem('personManagerId', managerId);
+  }, [managerId]);
+
+  useEffect(() => {
+    // Poll stations for up-to-date names
+    const fetchStations = () => {
+      api.get<Station[]>('/stations').then(res => {
+        setStations(Array.isArray(res.data) ? res.data : []);
+      }).catch(() => setStations([]));
+    };
+    fetchStations();
+    const interval = setInterval(fetchStations, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
+
   return (
     <div className="person-queue app-center">
       <div className="container py-4 px-2 px-md-4">
         <h2 className="mb-4">Manage Station Queue</h2>
+        {stationName && (
+          <div className="mb-3 text-center">
+            <span className="badge bg-info fs-5">Station: {stationName}</span>
+          </div>
+        )}
         <div className="row mb-3">
           <div className="col-12 col-md-6 mb-2 mb-md-0">
             <input

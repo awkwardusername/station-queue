@@ -24,10 +24,15 @@ const UserQueue: React.FC = () => {
   };
 
   useEffect(() => {
-    api.get<Station[]>('/stations').then(res => {
-      const data = Array.isArray(res.data) ? res.data : [];
-      setStations(data);
-    }).catch(() => setStations([]));
+    const fetchStations = () => {
+      api.get<Station[]>('/stations').then(res => {
+        const data = Array.isArray(res.data) ? res.data : [];
+        setStations(data);
+      }).catch(() => setStations([]));
+    };
+    fetchStations();
+    const interval = setInterval(fetchStations, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

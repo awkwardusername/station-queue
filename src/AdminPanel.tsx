@@ -2,8 +2,6 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import api from './api';
 import React, { useState, useEffect } from 'react';
 
-const ADMIN_SECRET = import.meta.env.ADMIN_SECRET;
-
 const AdminPanel: React.FC = () => {
   const [secret, setSecret] = useState('');
   const [name, setName] = useState('');
@@ -15,32 +13,31 @@ const AdminPanel: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const savedSecret = localStorage.getItem('adminSecret');
-    if (savedSecret) setSecret(savedSecret);
-  }, []);
-
-  useEffect(() => {
-    if (secret) localStorage.setItem('adminSecret', secret);
-  }, [secret]);
-
-  useEffect(() => {
-    api.get('/stations').then(res => {
-      setStations(Array.isArray(res.data) ? res.data : []);
-    });
-  }, [refresh]);
-
-  useEffect(() => {
-    if (secret === '') {
-      setIsAuthenticated(false);
-      return;
+    if (isAuthenticated) {
+      api.get('/stations', { headers: { 'x-admin-secret': secret } })
+        .then(res => {
+          setStations(Array.isArray(res.data) ? res.data : []);
+        })
+        .catch(() => {
+          setIsAuthenticated(false);
+        });
     }
-    // Only check authentication if the secret matches the admin secret from env
-    if (secret === ADMIN_SECRET) {
+  }, [refresh, isAuthenticated, secret]);
+
+  const tryAuthenticate = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await api.get('/stations', { headers: { 'x-admin-secret': secret } });
       setIsAuthenticated(true);
-    } else {
+      setRefresh(r => r + 1);
+    } catch {
       setIsAuthenticated(false);
+      setError('Invalid admin secret');
+    } finally {
+      setLoading(false);
     }
-  }, [secret]);
+  };
 
   const createStation = async () => {
     setError('');
@@ -49,7 +46,8 @@ const AdminPanel: React.FC = () => {
     try {
       const res = await api.post<{ id: string; name: string; managerId: string }>(
         '/admin/stations',
-        { secret, name }
+        { secret, name },
+        { headers: { 'x-admin-secret': secret } }
       );
       setResult(res.data);
       setName('');
@@ -57,6 +55,7 @@ const AdminPanel: React.FC = () => {
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error creating station');
+      if (err.response?.data?.error === 'Forbidden') setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
@@ -71,10 +70,40 @@ const AdminPanel: React.FC = () => {
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error deleting station');
+      if (err.response?.data?.error === 'Forbidden') setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="admin-panel app-center">
+        <div className="container py-4 px-2 px-md-4">
+          <h2 className="mb-4">Admin Login</h2>
+          <div className="row mb-3">
+            <div className="col-12 col-md-6 mb-2 mb-md-0">
+              <input
+                className="form-control mb-2"
+                placeholder="Admin Secret"
+                value={secret}
+                onChange={e => setSecret(e.target.value)}
+                type="password"
+                autoComplete="current-password"
+                onKeyDown={e => { if (e.key === 'Enter') tryAuthenticate(); }}
+              />
+            </div>
+            <div className="col-12 col-md-6 d-flex align-items-end">
+              <button className="btn btn-primary w-100 w-md-auto" onClick={tryAuthenticate} disabled={loading || !secret}>
+                {loading ? 'Checking...' : 'Unlock Admin'}
+              </button>
+            </div>
+          </div>
+          {error && <div className="alert alert-danger mt-2">{error}</div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-panel app-center">
@@ -89,6 +118,7 @@ const AdminPanel: React.FC = () => {
               onChange={e => setSecret(e.target.value)}
               type="password"
               autoComplete="current-password"
+              disabled
             />
           </div>
           <div className="col-12 col-md-6">
@@ -97,55 +127,48 @@ const AdminPanel: React.FC = () => {
               placeholder="Station Name"
               value={name}
               onChange={e => setName(e.target.value)}
-              disabled={!isAuthenticated}
             />
           </div>
         </div>
-        {!isAuthenticated ? (
-          <div className="alert alert-warning mt-2">Enter the correct admin secret to access the admin panel.</div>
-        ) : (
-          <>
-            <button className="btn btn-primary mb-3 w-100 w-md-auto" onClick={createStation} disabled={loading || !secret || !name}>
-              {loading ? 'Creating...' : 'Create Station'}
-            </button>
-            {error && <div className="alert alert-danger mt-2">{error}</div>}
-            {result && (
-              <div className="alert alert-success mt-2">
-                <div>Station created!</div>
-                <div><b>ID:</b> {result.id}</div>
-                <div><b>Name:</b> {result.name}</div>
-                <div><b>Manager ID:</b> {result.managerId}</div>
-              </div>
-            )}
-            <h3 className="admin-stations-title mt-4">Stations</h3>
-            <div className="table-responsive">
-              <table className="table table-bordered table-striped mt-2">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Manager ID</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stations.map(station => (
-                    <tr key={station.id}>
-                      <td>{station.id}</td>
-                      <td>{station.name}</td>
-                      <td>{station.managerId || '(not available)'} </td>
-                      <td>
-                        <button className="btn btn-danger btn-sm w-100 w-md-auto" onClick={() => deleteStation(station.id)} disabled={loading || !secret}>
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+        <button className="btn btn-primary mb-3 w-100 w-md-auto" onClick={createStation} disabled={loading || !secret || !name}>
+          {loading ? 'Creating...' : 'Create Station'}
+        </button>
+        {error && <div className="alert alert-danger mt-2">{error}</div>}
+        {result && (
+          <div className="alert alert-success mt-2">
+            <div>Station created!</div>
+            <div><b>ID:</b> {result.id}</div>
+            <div><b>Name:</b> {result.name}</div>
+            <div><b>Manager ID:</b> {result.managerId}</div>
+          </div>
         )}
+        <h3 className="admin-stations-title mt-4">Stations</h3>
+        <div className="table-responsive">
+          <table className="table table-bordered table-striped mt-2">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Manager ID</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stations.map(station => (
+                <tr key={station.id}>
+                  <td>{station.id}</td>
+                  <td>{station.name}</td>
+                  <td>{station.managerId || '(not available)'} </td>
+                  <td>
+                    <button className="btn btn-danger btn-sm w-100 w-md-auto" onClick={() => deleteStation(station.id)} disabled={loading || !secret}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
