@@ -11,11 +11,13 @@
     "netlify:dev": "netlify dev"
   },
   "dependencies": {
+    "@netlify/functions": "^4.1.8",
     "@prisma/client": "^6.11.0",
     "@prisma/extension-accelerate": "^2.0.1",
     "@types/axios": "^0.9.36",
     "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
     "@types/node": "^24.0.8",
     "axios": "^1.10.0",
     "bootstrap": "^5.3.7",
@@ -26,6 +28,7 @@
     "express": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "serverless-http": "^3.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",

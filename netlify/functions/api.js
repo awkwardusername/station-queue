@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
 import cookie from 'cookie';
+import serverless from 'serverless-http';
 
 const prisma = new PrismaClient().$extends(withAccelerate());
 
@@ -168,4 +169,6 @@ app.get('/my-queues', async (req, res) => {
   }
 });
 
+const serverlessHandler = serverless(app);
+export const handler = serverlessHandler;
 export default app;
