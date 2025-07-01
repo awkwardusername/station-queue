@@ -220,8 +220,7 @@ const UserQueue: React.FC = () => {
               {loading ? 'Joining...' : 'Join Queue'}
             </button>
           </div>
-        </div>
-        {queueNumber && (
+        </div>        {queueNumber && (
           <div className="alert alert-info">Your queue number: <b>{queueNumber}</b></div>
         )}
         <h3 className="admin-stations-title mt-4">My Queues</h3>

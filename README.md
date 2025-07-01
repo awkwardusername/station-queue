@@ -11,6 +11,7 @@ This is a Vite + React + TypeScript web application for managing queues at stati
 - Users can join queues for multiple stations.
 - Persons can view and pop the queue for their station.
 - Admin can create new stations.
+- Queue positions start from 100 for better user experience.
 
 ## Getting Started
 

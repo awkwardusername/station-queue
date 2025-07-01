@@ -3,7 +3,26 @@ import api from './api';
 import React, { useState, useEffect } from 'react';
 import { initAbly, subscribeToChannel, CHANNEL_NAMES, EVENT_NAMES } from './ablyUtils';
 
-const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
+const ADMIN_SECRET_KEY = 'adminSecret';
+
+interface AdminPanelProps {
+  onSwitchView?: (view: 'user' | 'person' | 'admin') => void;
+}
+
+const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
+  const [secret, setSecret] = useState(() => {
+    // Initialize from localStorage if available
+    return localStorage.getItem(ADMIN_SECRET_KEY) || '';
+  });
+  
+  // Update localStorage when secret changes
+  const handleSecretChange = (value: string) => {
+    setSecret(value);
+    // If the user is authenticated, save the new secret
+    if (isAuthenticated) {
+      localStorage.setItem(ADMIN_SECRET_KEY, value);
+    }
+  };
   const [name, setName] = useState('');
   const [result, setResult] = useState<{ id: string; name: string; managerId: string } | null>(null);
   const [error, setError] = useState('');
@@ -11,7 +30,7 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
   const [loading, setLoading] = useState(false);
   const [stations, setStations] = useState<Array<{ id: string; name: string; managerId?: string }>>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  // Initialize Ably
+  // Initialize Ably and check for saved admin secret
   useEffect(() => {
     const userId = localStorage.getItem('userId') || '';
     if (userId) {
@@ -25,6 +44,29 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
       
       initializeAbly();
     }
+    
+    // Try to authenticate with saved admin secret if it exists
+    const savedSecret = localStorage.getItem(ADMIN_SECRET_KEY);
+    if (savedSecret) {
+      const autoAuthenticate = async () => {
+        setLoading(true);
+        try {
+          await api.get('/stations', { headers: { 'x-admin-secret': savedSecret } });
+          setIsAuthenticated(true);
+          fetchStations(savedSecret);
+        } catch (error) {
+          console.error('Auto-authentication failed:', error);
+          // If authentication fails, clear the stored secret
+          localStorage.removeItem(ADMIN_SECRET_KEY);
+          setIsAuthenticated(false);
+          setSecret('');
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      autoAuthenticate();
+    }
   }, []);
 
   // Fetch stations only when authenticated or after create/delete
@@ -35,24 +77,26 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
     } catch {
       setIsAuthenticated(false);
     }
-  };
-
-  const tryAuthenticate = async () => {
+  };  const tryAuthenticate = async () => {
     setError('');
     setSuccess('');
     setLoading(true);
     try {
       await api.get('/stations', { headers: { 'x-admin-secret': secret } });
+      // Authentication successful, save to localStorage
+      localStorage.setItem(ADMIN_SECRET_KEY, secret);
       setIsAuthenticated(true);
+      setSuccess('Login successful! Admin credentials saved.');
       fetchStations(secret);
     } catch {
       setIsAuthenticated(false);
       setError('Invalid admin secret');
+      // Clear any stored secret on failed authentication
+      localStorage.removeItem(ADMIN_SECRET_KEY);
     } finally {
       setLoading(false);
     }
   };
-
   const createStation = async () => {
     setError('');
     setSuccess('');
@@ -70,25 +114,68 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error creating station');
-      if (err.response?.data?.error === 'Forbidden') setIsAuthenticated(false);
+      if (err.response?.data?.error === 'Forbidden') {
+        setIsAuthenticated(false);
+        localStorage.removeItem(ADMIN_SECRET_KEY); // Clear stored secret on authentication failure
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  const deleteStation = async (id: string) => {
+  };  const deleteStation = async (id: string) => {
+    // Ask for confirmation before deleting
+    const stationToDelete = stations.find(s => s.id === id);
+    const confirmDelete = window.confirm(`Are you sure you want to delete station "${stationToDelete?.name || id}"?\nThis action cannot be undone.`);
+    
+    if (!confirmDelete) {
+      return; // User cancelled the deletion
+    }
+    
     setError('');
     setSuccess('');
     setLoading(true);
     try {
       await api.delete(`/admin/stations/${id}`, { headers: { 'x-admin-secret': secret } });
+      setSuccess('Station deleted successfully');
       await fetchStations(secret);
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error deleting station');
-      if (err.response?.data?.error === 'Forbidden') setIsAuthenticated(false);
+      if (err.response?.data?.error === 'Forbidden') {
+        setIsAuthenticated(false);
+        localStorage.removeItem(ADMIN_SECRET_KEY); // Clear stored secret on authentication failure
+      }
     } finally {
       setLoading(false);
+    }
+  };
+    // Function to handle managing a station
+  const manageStation = (stationId: string, managerId: string | undefined) => {
+    if (!managerId) {
+      setError('Manager ID not available for this station');
+      return;
+    }
+    
+    try {
+      // Clear previous error/success messages
+      setError('');
+      setSuccess('');
+      
+      // Store station ID and manager ID in localStorage
+      localStorage.setItem('personStationId', stationId);
+      localStorage.setItem('personManagerId', managerId);
+      
+      // Show success message briefly before switching views
+      setSuccess(`Station selected. Switching to management view...`);
+      
+      // Switch to the Person view after a brief delay to show the message
+      setTimeout(() => {
+        if (onSwitchView) {
+          onSwitchView('person');
+        }
+      }, 500);
+    } catch (err) {
+      setError('Failed to set station data for management view');
+      console.error('Error setting station data:', err);
     }
   };
 
@@ -132,12 +219,11 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
         <div className="container py-4 px-2 px-md-4">
           <h2 className="mb-4">Admin Login</h2>
           <div className="row mb-3">
-            <div className="col-12 col-md-6 mb-2 mb-md-0">
-              <input
+            <div className="col-12 col-md-6 mb-2 mb-md-0">              <input
                 className="form-control mb-2"
                 placeholder="Admin Secret"
                 value={secret}
-                onChange={e => setSecret(e.target.value)}
+                onChange={e => handleSecretChange(e.target.value)}
                 type="password"
                 autoComplete="current-password"
                 onKeyDown={e => { if (e.key === 'Enter') tryAuthenticate(); }}
@@ -154,18 +240,31 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
       </div>
     );
   }
+  // Function to handle logout
+  const handleLogout = () => {
+    localStorage.removeItem(ADMIN_SECRET_KEY);
+    setIsAuthenticated(false);
+    setSecret('');
+  };
 
   return (
     <div className="admin-panel app-center">
       <div className="container py-4 px-2 px-md-4">
-        <h2 className="mb-4">Admin: Create Station</h2>
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <h2>Admin: Create Station</h2>
+          <button 
+            className="btn btn-outline-danger" 
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
         <div className="row mb-3">
-          <div className="col-12 col-md-6 mb-2 mb-md-0">
-            <input
+          <div className="col-12 col-md-6 mb-2 mb-md-0">            <input
               className="form-control mb-2"
               placeholder="Admin Secret"
               value={secret}
-              onChange={e => setSecret(e.target.value)}
+              onChange={e => handleSecretChange(e.target.value)}
               type="password"
               autoComplete="current-password"
               disabled
@@ -198,24 +297,35 @@ const AdminPanel: React.FC = () => {  const [secret, setSecret] = useState('');
         <h3 className="admin-stations-title mt-4">Stations</h3>
         <div className="table-responsive">
           <table className="table table-bordered table-striped mt-2">
-            <thead>
-              <tr>
+            <thead>              <tr>
                 <th>ID</th>
                 <th>Name</th>
                 <th>Manager ID</th>
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {stations.map(station => (
+            <tbody>              {stations.map(station => (
                 <tr key={station.id}>
                   <td>{station.id}</td>
                   <td>{station.name}</td>
                   <td>{station.managerId || '(not available)'} </td>
                   <td>
-                    <button className="btn btn-danger btn-sm w-100 w-md-auto" onClick={() => deleteStation(station.id)} disabled={loading || !secret}>
-                      Delete
-                    </button>
+                    <div className="d-flex gap-2 flex-wrap">                      <button 
+                        className="btn btn-primary btn-sm" 
+                        onClick={() => manageStation(station.id, station.managerId)}
+                        disabled={!station.managerId}
+                        title={station.managerId ? "Manage this station" : "Manager ID not available"}
+                      >
+                        Manage
+                      </button>
+                      <button 
+                        className="btn btn-danger btn-sm" 
+                        onClick={() => deleteStation(station.id)} 
+                        disabled={loading || !secret}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

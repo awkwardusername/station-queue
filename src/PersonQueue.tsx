@@ -5,7 +5,11 @@ import { initAbly, subscribeToQueueUpdates } from './ablyUtils';
 
 interface Station { id: string; name: string; }
 
-const PersonQueue: React.FC = () => {
+interface PersonQueueProps {
+  onSwitchView?: (view: 'user' | 'person' | 'admin') => void;
+}
+
+const PersonQueue: React.FC<PersonQueueProps> = ({ onSwitchView }) => {
   const [stationId, setStationId] = useState(() => localStorage.getItem('personStationId') || '');
   const [managerId, setManagerId] = useState(() => localStorage.getItem('personManagerId') || '');
   const [queue, setQueue] = useState<{ user_id: string; position: number }[]>([]);
@@ -140,11 +144,37 @@ const PersonQueue: React.FC = () => {
   }, [stationId, managerId]);
 
   const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
+  // Check if we're coming from the admin panel
+  const [isFromAdmin, setIsFromAdmin] = useState(false);
+  
+  useEffect(() => {
+    // Check localStorage for admin secret to determine if we came from admin
+    const adminSecret = localStorage.getItem('adminSecret');
+    setIsFromAdmin(!!adminSecret);
+  }, []);
+
+  // Function to handle returning to admin panel
+  const handleReturnToAdmin = () => {
+    if (onSwitchView) {
+      onSwitchView('admin');
+    }
+  };
 
   return (
     <div className="person-queue app-center">
       <div className="container py-4 px-2 px-md-4">
-        <h2 className="mb-4">Manage Station Queue</h2>
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <h2>Manage Station Queue</h2>
+          {isFromAdmin && onSwitchView && (
+            <button 
+              className="btn btn-outline-secondary" 
+              onClick={handleReturnToAdmin}
+            >
+              Return to Admin
+            </button>
+          )}
+        </div>
+        
         {stationName && (
           <div className="mb-3 text-center">
             <span className="badge bg-info fs-5">Station: {stationName}</span>
@@ -174,11 +204,10 @@ const PersonQueue: React.FC = () => {
         {error && <div className="alert alert-danger mt-2">{error}</div>}
         {queue.length > 0 && (
           <div>
-            <h3>Queue</h3>
-            {queue[0] && (
+            <h3>Queue</h3>            {queue[0] && (
               <div className="mb-3 text-center">
                 <span className="badge bg-success fs-5">
-                  Front of Queue: # {queue[0].position} 
+                  Front of Queue: # {queue[0].position}
                 </span>
               </div>
             )}

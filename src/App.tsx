@@ -27,8 +27,8 @@ function App() {
         </nav>
         <div className="w-100">
           {view === 'user' && <UserQueue />}
-          {view === 'person' && <PersonQueue />}
-          {view === 'admin' && <AdminPanel />}
+          {view === 'person' && <PersonQueue onSwitchView={setView} />}
+          {view === 'admin' && <AdminPanel onSwitchView={setView} />}
         </div>
       </div>
     </div>

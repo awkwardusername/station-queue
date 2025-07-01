@@ -203,12 +203,12 @@ app.post('/queue/:stationId', async (req, res) => {
     
     if (existing) {
       position = existing.position;
-    } else {
-      const max = await prisma.queue.aggregate({
+    } else {      const max = await prisma.queue.aggregate({
         where: { stationId },
         _max: { position: true }
       });
-      position = (max._max.position || 0) + 1;
+      // Start position from 100 instead of 1
+      position = (max._max.position || 99) + 1;
       await prisma.queue.create({ data: { stationId, userId, position } });
     }
     
