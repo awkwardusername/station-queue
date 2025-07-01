@@ -32,7 +32,7 @@ db.serialize(() => {
   )`);
 });
 
-const ADMIN_SECRET = 'changeme';
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 app.use((req, res, next) => {
   if (!req.cookies.userId) {

@@ -2,6 +2,8 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import api from './api';
 import React, { useState, useEffect } from 'react';
 
+const ADMIN_SECRET = import.meta.env.ADMIN_SECRET;
+
 const AdminPanel: React.FC = () => {
   const [secret, setSecret] = useState('');
   const [name, setName] = useState('');
@@ -32,8 +34,8 @@ const AdminPanel: React.FC = () => {
       setIsAuthenticated(false);
       return;
     }
-    // Only check authentication if the secret matches the known admin secret
-    if (secret === 'changeme') {
+    // Only check authentication if the secret matches the admin secret from env
+    if (secret === ADMIN_SECRET) {
       setIsAuthenticated(true);
     } else {
       setIsAuthenticated(false);
