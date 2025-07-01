@@ -280,18 +280,12 @@ app.post('/queue/:stationId/pop', async (req, res) => {
     try {
       const parsed = JSON.parse(req.body.toString('utf8'));
       managerId = parsed.managerId;
-      console.log('Pop Queue Debug: Parsed managerId from Buffer', { parsed });
     } catch (e) {
       console.log('Pop Queue Debug: Failed to parse Buffer body', { error: e });
+      res.status(400).json({ error: 'Invalid request body format', details: e.message });
     }
   }
 
-  console.log('Pop Queue Debug:', {
-    stationId,
-    incomingManagerId: managerId,
-    requestBody: req.body,
-    requestHeaders: req.headers,
-  });
   try {
     const station = await prisma.station.findUnique({ where: { id: stationId } });
     if (!station) {
