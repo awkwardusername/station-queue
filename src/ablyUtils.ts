@@ -24,23 +24,32 @@ const getApiBaseUrl = () => {
   if (
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
-    window.location.port === '5173'
+    window.location.port.startsWith('517') // Handle Vite's default ports (5173, 5174, etc)
   ) {
     return 'http://localhost:5000';
   }
   return '/.netlify/functions/api';
 };
 
-// Get Ably API key from the backend
-export const getAblyApiKey = async () => {
+// Get Ably API key from the backend with retry mechanism
+export const getAblyApiKey = async (retries = 3, delay = 1000): Promise<string | null> => {
   try {
     const baseUrl = getApiBaseUrl();
     const response = await fetch(`${baseUrl}/config/ably-key`);
     
     if (!response.ok) {
-      throw new Error('Failed to fetch Ably API key');
+      if (retries > 0) {
+        console.log(`Retrying fetch Ably API key (${retries} attempts left)...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return getAblyApiKey(retries - 1, delay * 1.5);
+      }
+      throw new Error(`Failed to fetch Ably API key: ${response.status} ${response.statusText}`);
     }
+    
     const data = await response.json();
+    if (!data.key) {
+      throw new Error('Ably API key not found in response');
+    }
     return data.key;
   } catch (error) {
     console.error('Error fetching Ably API key:', error);
@@ -50,23 +59,40 @@ export const getAblyApiKey = async () => {
 
 // Initialize the Ably client
 export const initAbly = async (userId: string) => {
+  // If already initialized, return the existing instance
   if (ably) return ably;
   
   clientId = userId;
   
-  // Get the Ably API key from the backend
-  const apiKey = await getAblyApiKey();
-  if (!apiKey) {
-    console.error('Failed to initialize Ably: No API key available');
+  try {
+    // Get the Ably API key from the backend
+    const apiKey = await getAblyApiKey();
+    if (!apiKey) {
+      console.error('Failed to initialize Ably: No API key available');
+      return null;
+    }
+    
+    // Create a new Ably client
+    ably = new Ably.Realtime({
+      key: apiKey,
+      clientId,
+      echoMessages: false, // Don't receive messages sent by this client
+    });
+
+    // Add connection state handling
+    ably.connection.on('connected', () => {
+      console.log('Ably connection established');
+    });
+
+    ably.connection.on('failed', (err) => {
+      console.error('Ably connection failed:', err);
+    });
+
+    return ably;
+  } catch (error) {
+    console.error('Error initializing Ably client:', error);
     return null;
   }
-  
-  ably = new Ably.Realtime({
-    key: apiKey,
-    clientId,
-  });
-
-  return ably;
 };
 
 // Get the Ably client (initialize if needed)

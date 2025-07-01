@@ -151,8 +151,19 @@ app.get('/config/ably-key', async (req, res) => {
   try {
     const apiKey = await getConfigValue('ABLY_API_KEY');
     if (!apiKey) {
+      console.error('ABLY_API_KEY not found in database. Check your configuration.');
       return res.status(404).json({ error: 'Ably API key not found' });
     }
+    
+    // Only return the key value, not the entire key
+    const keyParts = apiKey.split(':');
+    if (keyParts.length === 2) {
+      // Return a partially masked key for logging
+      console.log(`Serving Ably API key: ${keyParts[0].substring(0, 4)}...`);
+    } else {
+      console.log('Serving Ably API key (format unknown)');
+    }
+    
     res.json({ key: apiKey });
   } catch (err) {
     console.error('Error retrieving Ably API key:', err);

@@ -31,10 +31,18 @@ const UserQueue: React.FC = () => {
     if (storedUserId) {
       const initializeAbly = async () => {
         try {
-          await initAbly(storedUserId);
-          console.log('UserQueue: Ably initialized successfully');
+          const client = await initAbly(storedUserId);
+          if (client) {
+            console.log('UserQueue: Ably initialized successfully');
+          } else {
+            console.warn('UserQueue: Ably client is null, real-time updates may not work');
+            // Try to reinitialize after a delay
+            setTimeout(() => initializeAbly(), 5000);
+          }
         } catch (error) {
           console.error('UserQueue: Failed to initialize Ably:', error);
+          // Try to reinitialize after a delay
+          setTimeout(() => initializeAbly(), 5000);
         }
       };
       
@@ -131,21 +139,37 @@ const UserQueue: React.FC = () => {
           }
         );
         
-        // Subscribe to my queue updates
+    // Subscribe to my queue updates
         myQueuesUnsubscribe = await subscribeToMyQueueUpdates(userId, (queueData) => {
           console.log('UserQueue: Received my queues update via Ably:', queueData);
           
-          if (Array.isArray(queueData)) {
-            setMyQueues(queueData);
-            setLastUpdate(new Date());
-            
-            // Update queue number if needed
-            if (selected) {
-              const found = queueData.find(q => q.stationId === selected);
-              setQueueNumber(found ? found.queueNumber : null);
+          try {
+            if (Array.isArray(queueData)) {
+              // Validate the data structure
+              const validData = queueData.every(item => 
+                typeof item === 'object' && 
+                'stationId' in item && 
+                'stationName' in item && 
+                'queueNumber' in item
+              );
+              
+              if (validData) {
+                setMyQueues(queueData);
+                setLastUpdate(new Date());
+                
+                // Update queue number if needed
+                if (selected) {
+                  const found = queueData.find(q => q.stationId === selected);
+                  setQueueNumber(found ? found.queueNumber : null);
+                }
+              } else {
+                console.error('UserQueue: Received queue data with invalid structure:', queueData);
+              }
+            } else {
+              console.error('UserQueue: Received invalid queue data format:', queueData);
             }
-          } else {
-            console.error('UserQueue: Received invalid queue data format:', queueData);
+          } catch (error) {
+            console.error('UserQueue: Error processing queue update:', error);
           }
         });
       } catch (error) {

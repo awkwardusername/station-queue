@@ -12,13 +12,28 @@ const PersonQueue: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [popped, setPopped] = useState<string | null>(null);
-  const [stations, setStations] = useState<Station[]>([]);
-
-  // Initialize Ably
+  const [stations, setStations] = useState<Station[]>([]);  // Initialize Ably
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId') || '';
     if (storedUserId) {
-      initAbly(storedUserId);
+      const initializeAbly = async () => {
+        try {
+          const client = await initAbly(storedUserId);
+          if (client) {
+            console.log('PersonQueue: Ably initialized successfully');
+          } else {
+            console.warn('PersonQueue: Ably client is null, real-time updates may not work');
+            // Try to reinitialize after a delay
+            setTimeout(() => initializeAbly(), 5000);
+          }
+        } catch (error) {
+          console.error('PersonQueue: Failed to initialize Ably:', error);
+          // Try to reinitialize after a delay
+          setTimeout(() => initializeAbly(), 5000);
+        }
+      };
+      
+      initializeAbly();
     }
   }, []);
 
@@ -76,7 +91,6 @@ const PersonQueue: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('personManagerId', managerId);
   }, [managerId]);
-
   // Subscribe to real-time queue updates
   useEffect(() => {
     if (!stationId || !managerId) return;
@@ -85,12 +99,38 @@ const PersonQueue: React.FC = () => {
 
     // Subscribe to queue updates for this station
     const subscribe = async () => {
-      unsubscribe = await subscribeToQueueUpdates(stationId, (data: unknown) => {
-        const queueData = data as { queue?: { user_id: string; position: number }[] };
-        if (queueData && queueData.queue) {
-          setQueue(queueData.queue);
-        }
-      });
+      try {
+        unsubscribe = await subscribeToQueueUpdates(stationId, (data: unknown) => {
+          try {
+            console.log('PersonQueue: Received queue update via Ably:', data);
+            
+            // Type guard to ensure we have the expected data structure
+            if (data && typeof data === 'object' && 'queue' in data) {
+              const queueData = data as { queue?: { user_id: string; position: number }[] };
+              if (Array.isArray(queueData.queue)) {
+                // Validate each queue item has the expected structure
+                const validData = queueData.queue.every(item => 
+                  'user_id' in item && 'position' in item
+                );
+                
+                if (validData) {
+                  setQueue(queueData.queue);
+                } else {
+                  console.error('PersonQueue: Received queue items with invalid structure:', queueData.queue);
+                }
+              } else {
+                console.error('PersonQueue: Queue is not an array:', queueData);
+              }
+            } else {
+              console.error('PersonQueue: Received invalid data format:', data);
+            }
+          } catch (error) {
+            console.error('PersonQueue: Error processing queue update:', error);
+          }
+        });
+      } catch (error) {
+        console.error('PersonQueue: Error subscribing to queue updates:', error);
+      }
     };
     subscribe();
 

@@ -6,7 +6,7 @@ function getApiBaseUrl() {
   if (
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
-    window.location.port === '5173'
+    window.location.port.startsWith('517') // Handle Vite's default ports (5173, 5174, etc)
   ) {
     return 'http://localhost:5000';
   }
@@ -20,8 +20,15 @@ function getOrSetUserId() {
     userId = uuidv4();
     localStorage.setItem('userId', userId);
     
-    // Initialize Ably with the new userId
-    initAbly(userId);
+    // Initialize Ably with the new userId in background
+    // Using void to ignore the Promise
+    void (async () => {
+      try {
+        await initAbly(userId);
+      } catch (error) {
+        console.error('Error initializing Ably:', error);
+      }
+    })();
   }
   return userId || '';
 }
