@@ -269,9 +269,22 @@ app.get('/queue/:stationId', async (req, res) => {
 app.post('/queue/:stationId/pop', async (req, res) => {
   const { stationId } = req.params;
   const managerId = req.body.managerId;
+  console.log('Pop Queue Debug:', {
+    stationId,
+    incomingManagerId: managerId,
+    requestBody: req.body,
+    requestHeaders: req.headers,
+  });
   try {
     const station = await prisma.station.findUnique({ where: { id: stationId } });
-    if (!station || station.managerId !== managerId) return res.status(403).json({ error: 'Forbidden' });
+    if (!station) {
+      console.log('Pop Queue Debug: Station not found');
+      return res.status(403).json({ error: 'Forbidden', reason: 'Station not found' });
+    }
+    if (station.managerId !== managerId) {
+      console.log('Pop Queue Debug: ManagerId mismatch', { dbManagerId: station.managerId, incomingManagerId: managerId });
+      return res.status(403).json({ error: 'Forbidden', reason: 'ManagerId mismatch', dbManagerId: station.managerId, incomingManagerId: managerId });
+    }
     const first = await prisma.queue.findFirst({
       where: { stationId },
       orderBy: { position: 'asc' }
