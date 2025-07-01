@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 
 function getApiBaseUrl() {
   if (
@@ -11,9 +12,27 @@ function getApiBaseUrl() {
   return '/.netlify/functions/api';
 }
 
+// --- UserId persistence logic ---
+function getOrSetUserId() {
+  let userId = localStorage.getItem('userId');
+  if (!userId) {
+    userId = uuidv4();
+    localStorage.setItem('userId', userId);
+  }
+  return userId || '';
+}
+
 const api = axios.create({
   baseURL: getApiBaseUrl(),
   withCredentials: true,
+});
+
+// Add userId to every request as a header
+api.interceptors.request.use(config => {
+  const userId = getOrSetUserId();
+  config.headers = config.headers || {};
+  config.headers['x-user-id'] = userId;
+  return config;
 });
 
 export default api;

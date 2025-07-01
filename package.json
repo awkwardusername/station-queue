@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "prisma generate && tsc -b && vite build",
+    "build": "prisma generate --no-engine && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "netlify:dev": "netlify dev"
@@ -29,6 +29,7 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",
+    "uuid": "^11.1.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

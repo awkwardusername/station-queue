@@ -30,6 +30,10 @@ app.use((req, res, next) => {
     cookies = cookie.parse(req.headers.cookie);
   }
   let userId = cookies.userId;
+  // Accept userId from x-user-id header if present (for Netlify/SPA clients)
+  if (!userId && req.headers['x-user-id']) {
+    userId = req.headers['x-user-id'];
+  }
   if (!userId) {
     userId = randomUUID();
     const cookieStr = cookie.serialize('userId', userId, {
@@ -38,16 +42,21 @@ app.use((req, res, next) => {
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 365 // 1 year
     });
-    try {
-      if (typeof res.setHeader === 'function') {
+    // Only set cookie if possible (Express), otherwise skip for Netlify Functions
+    if (res && typeof res.setHeader === 'function') {
+      try {
         res.setHeader('Set-Cookie', cookieStr);
-      } else if (typeof res.append === 'function') {
-        res.append('Set-Cookie', cookieStr);
+      } catch (e) {
+        // Ignore errors in serverless environments
       }
-      // else: do not attempt to set cookie (Netlify Functions)
-    } catch (e) {
-      // Ignore errors in serverless environments
+    } else if (res && typeof res.append === 'function') {
+      try {
+        res.append('Set-Cookie', cookieStr);
+      } catch (e) {
+        // Ignore errors in serverless environments
+      }
     }
+    // If neither exists (Netlify Functions), do not attempt to set cookie
   }
   req.userId = userId;
   next();
