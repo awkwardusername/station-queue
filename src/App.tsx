@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import UserQueue from './UserQueue';
 import PersonQueue from './PersonQueue';
 import AdminPanel from './AdminPanel';
