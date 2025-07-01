@@ -33,6 +33,8 @@ db.serialize(() => {
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
+console.log("ADMIN_SECRET from env:", process.env.ADMIN_SECRET);
+
 app.use((req, res, next) => {
   if (!req.cookies.userId) {
     res.cookie('userId', randomUUID(), { httpOnly: false });
