@@ -1,10 +1,17 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import React, { useEffect, useState, useCallback } from 'react';
 import api from './api';
+import { initAbly, subscribeToMyQueueUpdates, CHANNEL_NAMES, EVENT_NAMES, subscribeToChannel } from './ablyUtils';
 
 interface Station {
   id: string;
   name: string;
+}
+
+interface QueueItem {
+  stationId: string;
+  stationName: string;
+  queueNumber: number;
 }
 
 const UserQueue: React.FC = () => {
@@ -12,30 +19,59 @@ const UserQueue: React.FC = () => {
   const [selected, setSelected] = useState<string>('');
   const [queueNumber, setQueueNumber] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [myQueues, setMyQueues] = useState<{ stationId: string; stationName: string; queueNumber: number }[]>([]);
+  const [myQueues, setMyQueues] = useState<QueueItem[]>([]);
+  const [userId, setUserId] = useState<string>('');
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // Initialize Ably and get userId
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('userId') || '';
+    console.log('UserQueue: Initializing with userId', storedUserId);
+    setUserId(storedUserId);
+    
+    if (storedUserId) {
+      initAbly(storedUserId);
+    }
+  }, []);
 
   const fetchStations = useCallback(async () => {
+    console.log('UserQueue: Fetching stations');
     try {
       const res = await api.get<Station[]>('/stations');
       setStations(Array.isArray(res.data) ? res.data : []);
-    } catch {
+    } catch (error) {
+      console.error('Error fetching stations:', error);
       setStations([]);
     }
   }, []);
 
   const fetchMyQueues = useCallback(async () => {
+    if (!userId) return;
+    console.log('UserQueue: Fetching my queues for userId', userId);
+    
     try {
-      const myRes = await api.get<{ stationId: string; stationName: string; queueNumber: number }[]>('/my-queues');
+      const myRes = await api.get<QueueItem[]>('/my-queues');
+      console.log('UserQueue: My queues data received:', myRes.data);
       setMyQueues(Array.isArray(myRes.data) ? myRes.data : []);
-    } catch {
+      setLastUpdate(new Date());
+      
+      // Update the queue number for the selected station if needed
+      if (selected) {
+        const found = myRes.data.find(q => q.stationId === selected);
+        setQueueNumber(found ? found.queueNumber : null);
+      }
+    } catch (error) {
+      console.error('Error fetching my queues:', error);
       setMyQueues([]);
     }
-  }, []);
+  }, [userId, selected]);
 
   useEffect(() => {
-    fetchStations();
-    fetchMyQueues();
-  }, [fetchStations, fetchMyQueues]);
+    if (userId) {
+      fetchStations();
+      fetchMyQueues();
+    }
+  }, [userId, fetchStations, fetchMyQueues]);
 
   useEffect(() => {
     if (selected) {
@@ -56,22 +92,66 @@ const UserQueue: React.FC = () => {
     return () => window.removeEventListener('queue-updated', handler);
   }, [fetchStations, fetchMyQueues]);
 
-  // Revert to polling for queue updates
+  // Subscribe to station updates and my queues via Ably
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchStations();
-      fetchMyQueues();
-    }, 2000); // Poll every 2 seconds
-    return () => clearInterval(interval);
-  }, [fetchStations, fetchMyQueues]);
+    if (!userId) return;
+    
+    console.log('UserQueue: Setting up Ably subscriptions for userId', userId);
+    
+    // Subscribe to station updates (creation, deletion, updates)
+    const stationsUnsubscribe = subscribeToChannel(
+      CHANNEL_NAMES.STATIONS,
+      EVENT_NAMES.STATION_CREATE,
+      (data) => {
+        console.log('UserQueue: Station created:', data);
+        fetchStations();
+      }
+    );
+    
+    const stationsDeleteUnsubscribe = subscribeToChannel(
+      CHANNEL_NAMES.STATIONS,
+      EVENT_NAMES.STATION_DELETE,
+      (data) => {
+        console.log('UserQueue: Station deleted:', data);
+        fetchStations();
+      }
+    );
+    
+    // Subscribe to my queue updates
+    const myQueuesUnsubscribe = subscribeToMyQueueUpdates(userId, (queueData) => {
+      console.log('UserQueue: Received my queues update via Ably:', queueData);
+      
+      if (Array.isArray(queueData)) {
+        setMyQueues(queueData);
+        setLastUpdate(new Date());
+        
+        // Update queue number if needed
+        if (selected) {
+          const found = queueData.find(q => q.stationId === selected);
+          setQueueNumber(found ? found.queueNumber : null);
+        }
+      } else {
+        console.error('UserQueue: Received invalid queue data format:', queueData);
+      }
+    });
+    
+    return () => {
+      stationsUnsubscribe();
+      stationsDeleteUnsubscribe();
+      myQueuesUnsubscribe();
+    };
+  }, [userId, fetchStations, selected]);
 
   const joinQueue = async () => {
     if (!selected) return;
     setLoading(true);
     try {
+      console.log('UserQueue: Joining queue for station', selected);
       const res = await api.post<{ queueNumber: number }>(`/queue/${selected}`);
       setQueueNumber(res.data.queueNumber);
-      await fetchMyQueues();
+      await fetchMyQueues(); // Still fetch once to ensure UI is updated immediately
+    } catch (error) {
+      console.error('Error joining queue:', error);
     } finally {
       setLoading(false);
     }
@@ -101,6 +181,9 @@ const UserQueue: React.FC = () => {
           <div className="alert alert-info">Your queue number: <b>{queueNumber}</b></div>
         )}
         <h3 className="admin-stations-title mt-4">My Queues</h3>
+        {lastUpdate && (
+          <div className="text-muted small mb-2">Last updated: {lastUpdate.toLocaleTimeString()}</div>
+        )}
         <div className="table-responsive">
           <table className="table table-bordered table-striped mt-2">
             <thead>
@@ -116,6 +199,11 @@ const UserQueue: React.FC = () => {
                   <td>{q.queueNumber}</td>
                 </tr>
               ))}
+              {myQueues.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="text-center">You are not in any queues</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -1,6 +1,7 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import api from './api';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { initAbly, subscribeToChannel, CHANNEL_NAMES, EVENT_NAMES } from './ablyUtils';
 
 const AdminPanel: React.FC = () => {
   const [secret, setSecret] = useState('');
@@ -10,6 +11,14 @@ const AdminPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [stations, setStations] = useState<Array<{ id: string; name: string; managerId?: string }>>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Initialize Ably
+  useEffect(() => {
+    const userId = localStorage.getItem('userId') || '';
+    if (userId) {
+      initAbly(userId);
+    }
+  }, []);
 
   // Fetch stations only when authenticated or after create/delete
   const fetchStations = async (adminSecret: string) => {
@@ -73,13 +82,28 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // Revert to polling for station list updates
-  React.useEffect(() => {
-    if (!isAuthenticated || !secret) return;
-    const interval = setInterval(() => {
-      fetchStations(secret);
-    }, 2000); // Poll every 2 seconds
-    return () => clearInterval(interval);
+  // Subscribe to station updates
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    // Subscribe to station creation
+    const createUnsubscribe = subscribeToChannel(
+      CHANNEL_NAMES.STATIONS,
+      EVENT_NAMES.STATION_CREATE,
+      () => fetchStations(secret)
+    );
+    
+    // Subscribe to station deletion
+    const deleteUnsubscribe = subscribeToChannel(
+      CHANNEL_NAMES.STATIONS,
+      EVENT_NAMES.STATION_DELETE,
+      () => fetchStations(secret)
+    );
+    
+    return () => {
+      createUnsubscribe();
+      deleteUnsubscribe();
+    };
   }, [isAuthenticated, secret]);
 
   if (!isAuthenticated) {

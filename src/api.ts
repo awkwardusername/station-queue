@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { initAbly } from './ablyUtils';
 
 function getApiBaseUrl() {
   if (
@@ -18,6 +19,9 @@ function getOrSetUserId() {
   if (!userId) {
     userId = uuidv4();
     localStorage.setItem('userId', userId);
+    
+    // Initialize Ably with the new userId
+    initAbly(userId);
   }
   return userId || '';
 }

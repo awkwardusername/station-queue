@@ -1,6 +1,7 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import api from './api';
+import { initAbly, subscribeToQueueUpdates } from './ablyUtils';
 
 interface Station { id: string; name: string; }
 
@@ -12,6 +13,14 @@ const PersonQueue: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [popped, setPopped] = useState<string | null>(null);
   const [stations, setStations] = useState<Station[]>([]);
+
+  // Initialize Ably
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('userId') || '';
+    if (storedUserId) {
+      initAbly(storedUserId);
+    }
+  }, []);
 
   const fetchQueue = useCallback(async () => {
     setError('');
@@ -35,9 +44,9 @@ const PersonQueue: React.FC = () => {
     try {
       const res = await api.post<{ popped: string | null }>(`/queue/${stationId}/pop`, { managerId });
       setPopped(res.data.popped);
+      // No need to fetch queue manually, Ably will update it
+      // But we'll do it once to ensure UI is updated immediately
       await fetchQueue();
-      // Notify UserQueue to update
-      window.dispatchEvent(new Event('queue-updated'));
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error popping queue');
@@ -68,14 +77,21 @@ const PersonQueue: React.FC = () => {
     localStorage.setItem('personManagerId', managerId);
   }, [managerId]);
 
-  // Revert to polling for queue updates
+  // Subscribe to real-time queue updates
   useEffect(() => {
     if (!stationId || !managerId) return;
-    const interval = setInterval(() => {
-      fetchQueue();
-    }, 2000); // Poll every 2 seconds
-    return () => clearInterval(interval);
-  }, [fetchQueue, stationId, managerId]);
+    
+    // Subscribe to queue updates for this station
+    const unsubscribe = subscribeToQueueUpdates(stationId, (data) => {
+      if (data && data.queue) {
+        setQueue(data.queue);
+      }
+    });
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [stationId, managerId]);
 
   const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
 

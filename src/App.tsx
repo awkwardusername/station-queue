@@ -1,10 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import UserQueue from './UserQueue';
 import PersonQueue from './PersonQueue';
 import AdminPanel from './AdminPanel';
+import { initAbly } from './ablyUtils';
+import './App.css';
 
 function App() {
   const [view, setView] = useState<'user' | 'person' | 'admin'>('user');
+
+  // Initialize Ably when app starts
+  useEffect(() => {
+    const userId = localStorage.getItem('userId');
+    if (userId) {
+      initAbly(userId);
+    }
+  }, []);
 
   return (
     <div className="App app-outer-center">

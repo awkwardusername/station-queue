@@ -6,8 +6,35 @@ import cors from 'cors';
 import { randomUUID } from 'crypto';
 import cookie from 'cookie';
 import serverless from 'serverless-http';
+import * as Ably from 'ably';
 
 const prisma = new PrismaClient().$extends(withAccelerate());
+
+// Initialize Ably
+const ably = new Ably.Rest({
+  key: process.env.ABLY_API_KEY,
+});
+
+// Channel and event names (keep in sync with frontend)
+const CHANNEL_NAMES = {
+  QUEUE: (stationId) => `queue:${stationId}`,
+  STATIONS: 'stations',
+  MY_QUEUES: (userId) => `my-queues:${userId}`,
+};
+
+const EVENT_NAMES = {
+  QUEUE_UPDATE: 'queue:update',
+  QUEUE_POP: 'queue:pop',
+  STATION_UPDATE: 'station:update',
+  STATION_CREATE: 'station:create',
+  STATION_DELETE: 'station:delete',
+};
+
+// Helper to publish to Ably channels
+const publishToChannel = (channelName, eventName, data) => {
+  const channel = ably.channels.get(channelName);
+  return channel.publish(eventName, data);
+};
 
 const app = express();
 app.use(express.json());
@@ -55,6 +82,14 @@ app.post('/admin/stations', async (req, res) => {
     const station = await prisma.station.create({
       data: { id, name, managerId }
     });
+    
+    // Publish station creation event
+    await publishToChannel(
+      CHANNEL_NAMES.STATIONS, 
+      EVENT_NAMES.STATION_CREATE, 
+      station
+    );
+    
     res.json(station);
   } catch (err) {
     res.status(500).json({ error: 'DB error', details: err.message });
@@ -70,6 +105,14 @@ app.delete('/admin/stations/:id', async (req, res) => {
   try {
     await prisma.queue.deleteMany({ where: { stationId: id } });
     await prisma.station.delete({ where: { id } });
+    
+    // Publish station deletion event
+    await publishToChannel(
+      CHANNEL_NAMES.STATIONS, 
+      EVENT_NAMES.STATION_DELETE, 
+      { id }
+    );
+    
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'DB error' });
@@ -99,18 +142,56 @@ app.post('/queue/:stationId', async (req, res) => {
     const station = await prisma.station.findUnique({ where: { id: stationId } });
     if (!station) return res.status(404).json({ error: 'Station not found' });
     const existing = await prisma.queue.findUnique({ where: { stationId_userId: { stationId, userId } } });
+    let position;
+    
     if (existing) {
-      res.json({ queueNumber: existing.position });
+      position = existing.position;
     } else {
       const max = await prisma.queue.aggregate({
         where: { stationId },
         _max: { position: true }
       });
-      const position = (max._max.position || 0) + 1;
+      position = (max._max.position || 0) + 1;
       await prisma.queue.create({ data: { stationId, userId, position } });
-      res.json({ queueNumber: position });
     }
+    
+    // Get the full queue after update
+    const queue = await prisma.queue.findMany({
+      where: { stationId },
+      orderBy: { position: 'asc' }
+    });
+    
+    // Publish queue update
+    await publishToChannel(
+      CHANNEL_NAMES.QUEUE(stationId),
+      EVENT_NAMES.QUEUE_UPDATE,
+      { queue: queue.map(r => ({ user_id: r.userId, position: r.position })) }
+    );
+    
+    // Also update the user's personal queue
+    const userQueues = await prisma.queue.findMany({
+      where: { userId },
+      include: { station: true },
+      orderBy: { position: 'asc' }
+    });
+    
+    const userQueueData = userQueues.map(q => ({ 
+      stationId: q.stationId, 
+      stationName: q.station.name, 
+      queueNumber: q.position 
+    }));
+    
+    console.log(`Publishing to ${CHANNEL_NAMES.MY_QUEUES(userId)}:${EVENT_NAMES.QUEUE_UPDATE}`, userQueueData);
+    
+    await publishToChannel(
+      CHANNEL_NAMES.MY_QUEUES(userId),
+      EVENT_NAMES.QUEUE_UPDATE,
+      userQueueData
+    );
+    
+    res.json({ queueNumber: position });
   } catch (err) {
+    console.error('Error in join queue:', err);
     res.status(500).json({ error: 'DB error' });
   }
 });
@@ -143,10 +224,56 @@ app.post('/queue/:stationId/pop', async (req, res) => {
       where: { stationId },
       orderBy: { position: 'asc' }
     });
+    
     if (!first) return res.json({ popped: null });
-    await prisma.queue.delete({ where: { stationId_userId: { stationId, userId: first.userId } } });
-    res.json({ popped: first.userId });
+    
+    const poppedUserId = first.userId;
+    await prisma.queue.delete({ where: { stationId_userId: { stationId, userId: poppedUserId } } });
+    
+    // Get updated queue
+    const queue = await prisma.queue.findMany({
+      where: { stationId },
+      orderBy: { position: 'asc' }
+    });
+    
+    // Publish queue update after pop
+    await publishToChannel(
+      CHANNEL_NAMES.QUEUE(stationId),
+      EVENT_NAMES.QUEUE_UPDATE,
+      { queue: queue.map(r => ({ user_id: r.userId, position: r.position })) }
+    );
+    
+    // Publish specific pop event
+    await publishToChannel(
+      CHANNEL_NAMES.QUEUE(stationId),
+      EVENT_NAMES.QUEUE_POP,
+      { poppedUserId }
+    );
+    
+    // Update the popped user's personal queue
+    const userQueues = await prisma.queue.findMany({
+      where: { userId: poppedUserId },
+      include: { station: true },
+      orderBy: { position: 'asc' }
+    });
+    
+    const userQueueData = userQueues.map(q => ({ 
+      stationId: q.stationId, 
+      stationName: q.station.name, 
+      queueNumber: q.position 
+    }));
+    
+    console.log(`Publishing to ${CHANNEL_NAMES.MY_QUEUES(poppedUserId)}:${EVENT_NAMES.QUEUE_UPDATE}`, userQueueData);
+    
+    await publishToChannel(
+      CHANNEL_NAMES.MY_QUEUES(poppedUserId),
+      EVENT_NAMES.QUEUE_UPDATE,
+      userQueueData
+    );
+    
+    res.json({ popped: poppedUserId });
   } catch (err) {
+    console.error('Error in pop queue:', err);
     res.status(500).json({ error: 'DB error' });
   }
 });
