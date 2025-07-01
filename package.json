@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "netlify:dev": "netlify dev",
+    "postinstall": "mkdir -p netlify/functions || true"
   },
   "dependencies": {
     "@types/axios": "^0.9.36",
@@ -38,6 +40,8 @@
     "tsx": "^4.20.3",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.34.1",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "netlify-cli": "^17.0.0",
+    "netlify-express": "^1.0.7"
   }
 }
