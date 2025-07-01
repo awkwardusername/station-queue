@@ -5,6 +5,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
+import cookie from 'cookie';
 
 const prisma = new PrismaClient().$extends(withAccelerate());
 
@@ -14,9 +15,28 @@ app.use(cookieParser());
 app.use(cors({ origin: true, credentials: true }));
 
 app.use((req, res, next) => {
-  if (!req.cookies.userId) {
-    res.cookie('userId', randomUUID(), { httpOnly: false });
+  let cookies = {};
+  if (req.headers.cookie) {
+    cookies = cookie.parse(req.headers.cookie);
   }
+  let userId = cookies.userId;
+  if (!userId) {
+    userId = randomUUID();
+    const cookieStr = cookie.serialize('userId', userId, {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 365 // 1 year
+    });
+    // Only set cookie if possible (Express), otherwise skip for Netlify Functions
+    if (typeof res.setHeader === 'function') {
+      res.setHeader('Set-Cookie', cookieStr);
+    } else if (typeof res.append === 'function') {
+      res.append('Set-Cookie', cookieStr);
+    }
+    // If neither exists (Netlify Functions), do not attempt to set cookie
+  }
+  req.userId = userId;
   next();
 });
 
@@ -77,7 +97,7 @@ app.get('/stations', async (req, res) => {
 // User: join queue
 app.post('/queue/:stationId', async (req, res) => {
   const { stationId } = req.params;
-  const userId = req.cookies.userId;
+  const userId = req.userId;
   try {
     const station = await prisma.station.findUnique({ where: { id: stationId } });
     if (!station) return res.status(404).json({ error: 'Station not found' });
@@ -136,7 +156,7 @@ app.post('/queue/:stationId/pop', async (req, res) => {
 
 // User: view all queues
 app.get('/my-queues', async (req, res) => {
-  const userId = req.cookies.userId;
+  const userId = req.userId;
   try {
     const queues = await prisma.queue.findMany({
       where: { userId },

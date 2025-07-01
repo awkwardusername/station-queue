@@ -1,5 +1,5 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import api from './api';
 
 interface Station {
@@ -14,34 +14,28 @@ const UserQueue: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [myQueues, setMyQueues] = useState<{ stationId: string; stationName: string; queueNumber: number }[]>([]);
 
-  const fetchMyQueues = async () => {
+  const fetchStations = useCallback(async () => {
+    try {
+      const res = await api.get<Station[]>('/stations');
+      setStations(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setStations([]);
+    }
+  }, []);
+
+  const fetchMyQueues = useCallback(async () => {
     try {
       const myRes = await api.get<{ stationId: string; stationName: string; queueNumber: number }[]>('/my-queues');
       setMyQueues(Array.isArray(myRes.data) ? myRes.data : []);
     } catch {
       setMyQueues([]);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    const fetchStations = () => {
-      api.get<Station[]>('/stations').then(res => {
-        const data = Array.isArray(res.data) ? res.data : [];
-        setStations(data);
-      }).catch(() => setStations([]));
-    };
     fetchStations();
-    const interval = setInterval(fetchStations, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(fetchMyQueues, 2000);
     fetchMyQueues();
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
+  }, [fetchStations, fetchMyQueues]);
 
   useEffect(() => {
     if (selected) {
@@ -51,6 +45,25 @@ const UserQueue: React.FC = () => {
       setQueueNumber(null);
     }
   }, [myQueues, selected]);
+
+  // Listen for custom 'queue-updated' event to refresh queues
+  useEffect(() => {
+    const handler = () => {
+      fetchStations();
+      fetchMyQueues();
+    };
+    window.addEventListener('queue-updated', handler);
+    return () => window.removeEventListener('queue-updated', handler);
+  }, [fetchStations, fetchMyQueues]);
+
+  // Revert to polling for queue updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchStations();
+      fetchMyQueues();
+    }, 2000); // Poll every 2 seconds
+    return () => clearInterval(interval);
+  }, [fetchStations, fetchMyQueues]);
 
   const joinQueue = async () => {
     if (!selected) return;

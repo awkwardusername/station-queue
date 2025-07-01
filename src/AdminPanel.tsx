@@ -1,6 +1,6 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import api from './api';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 const AdminPanel: React.FC = () => {
   const [secret, setSecret] = useState('');
@@ -9,20 +9,17 @@ const AdminPanel: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [stations, setStations] = useState<Array<{ id: string; name: string; managerId?: string }>>([]);
-  const [refresh, setRefresh] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      api.get('/stations', { headers: { 'x-admin-secret': secret } })
-        .then(res => {
-          setStations(Array.isArray(res.data) ? res.data : []);
-        })
-        .catch(() => {
-          setIsAuthenticated(false);
-        });
+  // Fetch stations only when authenticated or after create/delete
+  const fetchStations = async (adminSecret: string) => {
+    try {
+      const res = await api.get('/stations', { headers: { 'x-admin-secret': adminSecret } });
+      setStations(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setIsAuthenticated(false);
     }
-  }, [refresh, isAuthenticated, secret]);
+  };
 
   const tryAuthenticate = async () => {
     setError('');
@@ -30,7 +27,7 @@ const AdminPanel: React.FC = () => {
     try {
       await api.get('/stations', { headers: { 'x-admin-secret': secret } });
       setIsAuthenticated(true);
-      setRefresh(r => r + 1);
+      fetchStations(secret);
     } catch {
       setIsAuthenticated(false);
       setError('Invalid admin secret');
@@ -51,7 +48,7 @@ const AdminPanel: React.FC = () => {
       );
       setResult(res.data);
       setName('');
-      setRefresh(r => r + 1);
+      await fetchStations(secret);
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error creating station');
@@ -66,7 +63,7 @@ const AdminPanel: React.FC = () => {
     setLoading(true);
     try {
       await api.delete(`/admin/stations/${id}`, { headers: { 'x-admin-secret': secret } });
-      setRefresh(r => r + 1);
+      await fetchStations(secret);
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error deleting station');
@@ -75,6 +72,15 @@ const AdminPanel: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Revert to polling for station list updates
+  React.useEffect(() => {
+    if (!isAuthenticated || !secret) return;
+    const interval = setInterval(() => {
+      fetchStations(secret);
+    }, 2000); // Poll every 2 seconds
+    return () => clearInterval(interval);
+  }, [isAuthenticated, secret]);
 
   if (!isAuthenticated) {
     return (

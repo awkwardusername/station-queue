@@ -35,7 +35,9 @@ const PersonQueue: React.FC = () => {
     try {
       const res = await api.post<{ popped: string | null }>(`/queue/${stationId}/pop`, { managerId });
       setPopped(res.data.popped);
-      fetchQueue();
+      await fetchQueue();
+      // Notify UserQueue to update
+      window.dispatchEvent(new Event('queue-updated'));
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
       setError(err.response?.data?.error || 'Error popping queue');
@@ -45,17 +47,18 @@ const PersonQueue: React.FC = () => {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined;
     if (stationId && managerId) {
       fetchQueue();
-      interval = setInterval(fetchQueue, 2000);
     } else {
       setQueue([]);
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [stationId, managerId, fetchQueue]);
+  }, [stationId, managerId]);
+
+  useEffect(() => {
+    api.get<Station[]>('/stations').then(res => {
+      setStations(Array.isArray(res.data) ? res.data : []);
+    }).catch(() => setStations([]));
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('personStationId', stationId);
@@ -65,17 +68,14 @@ const PersonQueue: React.FC = () => {
     localStorage.setItem('personManagerId', managerId);
   }, [managerId]);
 
+  // Revert to polling for queue updates
   useEffect(() => {
-    // Poll stations for up-to-date names
-    const fetchStations = () => {
-      api.get<Station[]>('/stations').then(res => {
-        setStations(Array.isArray(res.data) ? res.data : []);
-      }).catch(() => setStations([]));
-    };
-    fetchStations();
-    const interval = setInterval(fetchStations, 2000);
+    if (!stationId || !managerId) return;
+    const interval = setInterval(() => {
+      fetchQueue();
+    }, 2000); // Poll every 2 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchQueue, stationId, managerId]);
 
   const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
 
