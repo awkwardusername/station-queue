@@ -52,7 +52,7 @@ const PersonQueue: React.FC = () => {
     } else {
       setQueue([]);
     }
-  }, [stationId, managerId]);
+  }, [stationId, managerId, fetchQueue]);
 
   useEffect(() => {
     api.get<Station[]>('/stations').then(res => {
