@@ -28,13 +28,16 @@ app.use((req, res, next) => {
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 365 // 1 year
     });
-    // Only set cookie if possible (Express), otherwise skip for Netlify Functions
-    if (typeof res.setHeader === 'function') {
-      res.setHeader('Set-Cookie', cookieStr);
-    } else if (typeof res.append === 'function') {
-      res.append('Set-Cookie', cookieStr);
+    try {
+      if (typeof res.setHeader === 'function') {
+        res.setHeader('Set-Cookie', cookieStr);
+      } else if (typeof res.append === 'function') {
+        res.append('Set-Cookie', cookieStr);
+      }
+      // else: do not attempt to set cookie (Netlify Functions)
+    } catch (e) {
+      // Ignore errors in serverless environments
     }
-    // If neither exists (Netlify Functions), do not attempt to set cookie
   }
   req.userId = userId;
   next();
