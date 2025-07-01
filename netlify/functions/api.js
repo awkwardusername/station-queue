@@ -33,7 +33,6 @@ app.use((req, res, next) => {
   if (!userId && req.headers['x-user-id']) {
     userId = req.headers['x-user-id'];
   }
-  // Do NOT attempt to set cookies in Netlify Functions/serverless
   req.userId = userId;
   next();
 });
