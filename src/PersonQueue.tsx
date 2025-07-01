@@ -80,16 +80,22 @@ const PersonQueue: React.FC = () => {
   // Subscribe to real-time queue updates
   useEffect(() => {
     if (!stationId || !managerId) return;
-    
+
+    let unsubscribe: (() => void) | undefined;
+
     // Subscribe to queue updates for this station
-    const unsubscribe = subscribeToQueueUpdates(stationId, (data) => {
-      if (data && data.queue) {
-        setQueue(data.queue);
-      }
-    });
-    
+    const subscribe = async () => {
+      unsubscribe = await subscribeToQueueUpdates(stationId, (data: unknown) => {
+        const queueData = data as { queue?: { user_id: string; position: number }[] };
+        if (queueData && queueData.queue) {
+          setQueue(queueData.queue);
+        }
+      });
+    };
+    subscribe();
+
     return () => {
-      unsubscribe();
+      if (unsubscribe) unsubscribe();
     };
   }, [stationId, managerId]);
 
