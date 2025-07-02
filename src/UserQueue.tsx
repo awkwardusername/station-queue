@@ -33,6 +33,7 @@ const UserQueue: React.FC = () => {
   };
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [bellAnimate, setBellAnimate] = useState(false);
   // Track previous queue state for notification comparison
   const prevQueuesRef = React.useRef<QueueItem[]>([]);
   // Initialize Ably and get userId
@@ -211,6 +212,24 @@ const UserQueue: React.FC = () => {
                     localStorage.setItem('queueNotifications', JSON.stringify(updated));
                     return updated;
                   });
+                  // Animate bell and play sound
+                  setBellAnimate(true);
+                  // Play sound (simple beep)
+                  try {
+                    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+                    const o = ctx.createOscillator();
+                    const g = ctx.createGain();
+                    o.type = 'sine';
+                    o.frequency.value = 1200;
+                    g.gain.value = 0.08;
+                    o.connect(g);
+                    g.connect(ctx.destination);
+                    o.start();
+                    o.stop(ctx.currentTime + 0.18);
+                    o.onended = () => ctx.close();
+                  } catch {
+                    // Ignore audio errors (e.g., user gesture required)
+                  }
                 }
 
                 setMyQueues(queueData);
@@ -284,7 +303,12 @@ const UserQueue: React.FC = () => {
             aria-label="Notifications"
             role="button"
           >
-            <span role="img" aria-label="bell">🔔</span>
+            <span
+              role="img"
+              aria-label="bell"
+              className={bellAnimate ? 'bell-animate' : ''}
+              onAnimationEnd={() => setBellAnimate(false)}
+            >🔔</span>
             {notifications.length > 0 && (
               <span className="notification-badge">{notifications.length}</span>
             )}
