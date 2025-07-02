@@ -30,6 +30,7 @@ const UserQueue: React.FC = () => {
     type: 'removed' | 'position';
     station: string;
     queueNumber?: number;
+    prevQueueNumber?: number;
   };
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -195,10 +196,11 @@ const UserQueue: React.FC = () => {
                     const nowQ = queueData.find((q: QueueItem) => q.stationId === prevQ.stationId);
                     if (!nowQ) {
                       newNotifs.push({
-                        msg: `You were removed from "${prevQ.stationName}" queue.`,
+                        msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
                         ts: Date.now(),
                         type: 'removed',
-                        station: prevQ.stationName
+                        station: prevQ.stationName,
+                        prevQueueNumber: prevQ.queueNumber
                       });
                     } else if (nowQ.queueNumber !== prevQ.queueNumber) {
                       newNotifs.push({
