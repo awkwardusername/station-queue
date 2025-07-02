@@ -22,12 +22,34 @@ const UserQueue: React.FC = () => {
   const [myQueues, setMyQueues] = useState<QueueItem[]>([]);
   const [userId, setUserId] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // Notification bell state
+  type Notification = {
+    msg: string;
+    ts: number;
+    type: 'removed' | 'position';
+    station: string;
+    queueNumber?: number;
+  };
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  // prevQueuesRef is now unused, safe to remove after Ably integration
   // Initialize Ably and get userId
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId') || '';
     console.log('UserQueue: Initializing with userId', storedUserId);
     setUserId(storedUserId);
-    
+
+    // Load notifications from localStorage
+    const storedNotifs = localStorage.getItem('queueNotifications');
+    if (storedNotifs) {
+      try {
+        setNotifications(JSON.parse(storedNotifs));
+      } catch {
+        // Ignore JSON parse errors for notifications
+      }
+    }
+
     if (storedUserId) {
       const initializeAbly = async () => {
         try {
@@ -45,7 +67,7 @@ const UserQueue: React.FC = () => {
           setTimeout(() => initializeAbly(), 5000);
         }
       };
-      
+
       initializeAbly();
     }
   }, []);
@@ -97,6 +119,8 @@ const UserQueue: React.FC = () => {
       setQueueNumber(null);
     }
   }, [myQueues, selected]);
+
+  // Remove local-only notification logic; now handled in Ably callback
 
   // Listen for custom 'queue-updated' event to refresh queues
   useEffect(() => {
@@ -203,7 +227,77 @@ const UserQueue: React.FC = () => {
 
   return (
     <div className="user-queue app-center">
-      <div className="container py-4 px-2 px-md-4">
+      <div className="container py-4 px-2 px-md-4" style={{position: 'relative'}}>
+        {/* Notification Bell */}
+        <div style={{position: 'absolute', top: 16, right: 24, zIndex: 1100}}>
+          <span
+            className="notification-bell"
+            tabIndex={0}
+            onClick={() => {
+              setShowDropdown(v => !v);
+              // Mark as read (clear badge)
+              if (!showDropdown) {
+                setTimeout(() => {
+                  setNotifications(prev => {
+                    localStorage.setItem('queueNotifications', JSON.stringify(prev));
+                    return prev;
+                  });
+                }, 100);
+              }
+            }}
+            onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+            aria-label="Notifications"
+            role="button"
+          >
+            <span role="img" aria-label="bell">🔔</span>
+            {notifications.length > 0 && (
+              <span className="notification-badge">{notifications.length}</span>
+            )}
+          </span>
+          {showDropdown && (
+            <div className="notification-dropdown">
+              <ul>
+                {notifications.length === 0 && (
+                  <li>No notifications</li>
+                )}
+                {notifications.map((n, i) => (
+                  <li key={n.ts + '-' + i} style={{display: 'flex', alignItems: 'flex-start', gap: '0.5rem'}}>
+                    <span style={{fontSize: '1.3em', marginTop: '0.1em'}}>
+                      {n.type === 'removed' ? '❌' : n.type === 'position' ? '🔢' : '🔔'}
+                    </span>
+                    <span>
+                      {n.type === 'removed' && (
+                        <>
+                          Removed from <b>{n.station}</b> queue.
+                        </>
+                      )}
+                      {n.type === 'position' && (
+                        <>
+                          Position in <b>{n.station}</b> changed to <b>{n.queueNumber}</b>.
+                        </>
+                      )}
+                      <br />
+                      <span style={{fontSize: '0.85em', color: '#888'}}>
+                        {new Date(n.ts).toLocaleTimeString()}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div style={{textAlign: 'right', padding: '0.5rem 1rem 0.2rem'}}>
+                <button
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => {
+                    setNotifications([]);
+                    localStorage.setItem('queueNotifications', '[]');
+                  }}
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <h2 className="mb-4">Queue for a Station</h2>
         <div className="row mb-3">
           <div className="col-12 col-md-6 mb-2 mb-md-0">
