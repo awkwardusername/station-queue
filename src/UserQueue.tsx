@@ -182,54 +182,61 @@ const UserQueue: React.FC = () => {
               if (validData) {
                 // Notification logic: compare with previous queues
                 const prevQueues = prevQueuesRef.current;
+                let skipFirst = false;
+                if (prevQueues.length === 0) {
+                  // First update, just set ref and skip notifications
+                  skipFirst = true;
+                  prevQueuesRef.current = queueData;
+                }
                 const newNotifs: Notification[] = [];
 
-                prevQueues.forEach(prevQ => {
-                  const nowQ = queueData.find((q: QueueItem) => q.stationId === prevQ.stationId);
-                  if (!nowQ) {
-                    newNotifs.push({
-                      msg: `You were removed from "${prevQ.stationName}" queue.`,
-                      ts: Date.now(),
-                      type: 'removed',
-                      station: prevQ.stationName
-                    });
-                  } else if (nowQ.queueNumber !== prevQ.queueNumber) {
-                    newNotifs.push({
-                      msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
-                      ts: Date.now(),
-                      type: 'position',
-                      station: nowQ.stationName,
-                      queueNumber: nowQ.queueNumber
-                    });
-                  }
-                });
-
-                prevQueuesRef.current = queueData;
-
-                if (newNotifs.length > 0) {
-                  setNotifications(prev => {
-                    const updated = [...newNotifs, ...prev].slice(0, 10);
-                    localStorage.setItem('queueNotifications', JSON.stringify(updated));
-                    return updated;
+                if (!skipFirst) {
+                  prevQueues.forEach(prevQ => {
+                    const nowQ = queueData.find((q: QueueItem) => q.stationId === prevQ.stationId);
+                    if (!nowQ) {
+                      newNotifs.push({
+                        msg: `You were removed from "${prevQ.stationName}" queue.`,
+                        ts: Date.now(),
+                        type: 'removed',
+                        station: prevQ.stationName
+                      });
+                    } else if (nowQ.queueNumber !== prevQ.queueNumber) {
+                      newNotifs.push({
+                        msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
+                        ts: Date.now(),
+                        type: 'position',
+                        station: nowQ.stationName,
+                        queueNumber: nowQ.queueNumber
+                      });
+                    }
                   });
-                  // Animate bell and play sound
-                  setBellAnimate(true);
-                  // Play sound (simple beep)
-                  try {
-                    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-                    const o = ctx.createOscillator();
-                    const g = ctx.createGain();
-                    o.type = 'sine';
-                    o.frequency.value = 1200;
-                    g.gain.value = 0.08;
-                    o.connect(g);
-                    g.connect(ctx.destination);
-                    o.start();
-                    o.stop(ctx.currentTime + 0.18);
-                    o.onended = () => ctx.close();
-                  } catch {
-                    // Ignore audio errors (e.g., user gesture required)
+
+                  if (newNotifs.length > 0) {
+                    setNotifications(prev => {
+                      const updated = [...newNotifs, ...prev].slice(0, 10);
+                      localStorage.setItem('queueNotifications', JSON.stringify(updated));
+                      return updated;
+                    });
+                    // Animate bell and play sound
+                    setBellAnimate(true);
+                    // Play sound (simple beep)
+                    try {
+                      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+                      const o = ctx.createOscillator();
+                      const g = ctx.createGain();
+                      o.type = 'sine';
+                      o.frequency.value = 1200;
+                      g.gain.value = 0.08;
+                      o.connect(g);
+                      g.connect(ctx.destination);
+                      o.start();
+                      o.stop(ctx.currentTime + 0.18);
+                      o.onended = () => ctx.close();
+                    } catch {
+                      // Ignore audio errors (e.g., user gesture required)
+                    }
                   }
+                  prevQueuesRef.current = queueData;
                 }
 
                 setMyQueues(queueData);
