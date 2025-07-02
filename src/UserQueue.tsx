@@ -14,6 +14,7 @@ interface QueueItem {
   stationId: string;
   stationName: string;
   queueNumber: number;
+  actualPosition?: number;
 }
 
 const UserQueue: React.FC = () => {
@@ -289,19 +290,39 @@ const UserQueue: React.FC = () => {
           }
         });
 
-        // Check for position changes
+        // Check for position changes using actualPosition from API
         newQueueData.forEach((nowQ: QueueItem) => {
           const prevQ = prevQueues.find(p => p.stationId === nowQ.stationId);
-          if (prevQ && nowQ.queueNumber !== prevQ.queueNumber) {
-            const actualPosition = calculateActualPosition(newQueueData, nowQ.stationId, nowQ.queueNumber);
-            console.log('UserQueue: fetchMyQueues - Position changed:', prevQ.queueNumber, '->', nowQ.queueNumber, 'Actual position:', actualPosition);
-            newNotifs.push({
-              msg: `Your position in "${nowQ.stationName}" changed to ${actualPosition} in line.`,
-              ts: Date.now(),
-              type: 'position',
-              station: nowQ.stationName,
-              queueNumber: actualPosition
-            });
+          if (prevQ) {
+            const currentActualPosition = nowQ.actualPosition || calculateActualPosition(newQueueData, nowQ.stationId, nowQ.queueNumber);
+            const prevActualPosition = prevQ.actualPosition || calculateActualPosition(prevQueues, prevQ.stationId, prevQ.queueNumber);
+            
+            console.log(`UserQueue: fetchMyQueues - Station ${nowQ.stationId}: Position number ${prevQ.queueNumber} -> ${nowQ.queueNumber}, Actual position ${prevActualPosition} -> ${currentActualPosition}`);
+            
+            // Detect any change in actual queue position
+            if (currentActualPosition !== prevActualPosition) {
+              if (currentActualPosition < prevActualPosition) {
+                // Moved up
+                console.log('UserQueue: fetchMyQueues - User moved up in line:', prevActualPosition, '->', currentActualPosition);
+                newNotifs.push({
+                  msg: `You moved up in "${nowQ.stationName}" queue! Now position ${currentActualPosition} in line.`,
+                  ts: Date.now(),
+                  type: 'position',
+                  station: nowQ.stationName,
+                  queueNumber: currentActualPosition
+                });
+              } else {
+                // Moved down
+                console.log('UserQueue: fetchMyQueues - User moved down in line:', prevActualPosition, '->', currentActualPosition);
+                newNotifs.push({
+                  msg: `Your position in "${nowQ.stationName}" changed to ${currentActualPosition} in line.`,
+                  ts: Date.now(),
+                  type: 'position',
+                  station: nowQ.stationName,
+                  queueNumber: currentActualPosition
+                });
+              }
+            }
           }
         });
 
@@ -493,13 +514,16 @@ const UserQueue: React.FC = () => {
                     if (prevQ) {
                       console.log(`UserQueue: Checking station ${nowQ.stationId} - prev: ${prevQ.queueNumber}, now: ${nowQ.queueNumber}`);
                       
-                      // Check if position number is the same but actual queue order improved
-                      const currentActualPosition = calculateActualPosition(queueData, nowQ.stationId, nowQ.queueNumber);
-                      const prevActualPosition = calculateActualPosition(prevQueues, prevQ.stationId, prevQ.queueNumber);
+                      // Use actual positions from API or fallback to calculation
+                      const currentActualPosition = nowQ.actualPosition || calculateActualPosition(queueData, nowQ.stationId, nowQ.queueNumber);
+                      const prevActualPosition = prevQ.actualPosition || calculateActualPosition(prevQueues, prevQ.stationId, prevQ.queueNumber);
                       
-                      if (nowQ.queueNumber === prevQ.queueNumber && currentActualPosition < prevActualPosition) {
-                        // Position number stayed same but moved up in line order
-                        console.log('UserQueue: Position number same but moved up in line:', prevActualPosition, '->', currentActualPosition);
+                      console.log(`UserQueue: Station ${nowQ.stationId} - Position number: ${prevQ.queueNumber} -> ${nowQ.queueNumber}, Actual position: ${prevActualPosition} -> ${currentActualPosition}`);
+                      
+                      // Check for any improvement in actual queue position (even if position number stays same)
+                      if (currentActualPosition < prevActualPosition) {
+                        // Moved up in line
+                        console.log('UserQueue: User moved up in line:', prevActualPosition, '->', currentActualPosition);
                         newNotifs.push({
                           msg: `You moved up in "${nowQ.stationName}" queue! Now position ${currentActualPosition} in line.`,
                           ts: Date.now(),
@@ -507,9 +531,9 @@ const UserQueue: React.FC = () => {
                           station: nowQ.stationName,
                           queueNumber: currentActualPosition
                         });
-                      } else if (nowQ.queueNumber !== prevQ.queueNumber) {
-                        // Position number actually changed
-                        console.log('UserQueue: Position changed:', prevQ.queueNumber, '->', nowQ.queueNumber, 'Actual position:', prevActualPosition, '->', currentActualPosition);
+                      } else if (currentActualPosition > prevActualPosition) {
+                        // Moved down in line (someone joined ahead)
+                        console.log('UserQueue: User moved down in line:', prevActualPosition, '->', currentActualPosition);
                         newNotifs.push({
                           msg: `Your position in "${nowQ.stationName}" changed to ${currentActualPosition} in line.`,
                           ts: Date.now(),

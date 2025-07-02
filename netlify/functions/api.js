@@ -337,10 +337,23 @@ app.post('/queue/:stationId', async (req, res) => {
       orderBy: { position: 'asc' }
     });
 
-    const userQueueData = userQueues.map(q => ({
-      stationId: q.stationId,
-      stationName: q.station.name,
-      queueNumber: q.position
+    const userQueueData = await Promise.all(userQueues.map(async (q) => {
+      // Get all users in this station's queue to calculate actual position
+      const stationQueue = await prisma.queue.findMany({
+        where: { stationId: q.stationId },
+        orderBy: { position: 'asc' },
+        select: { userId: true, position: true }
+      });
+      
+      // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
+      const actualPosition = stationQueue.findIndex(sq => sq.userId === userId) + 1;
+      
+      return {
+        stationId: q.stationId,
+        stationName: q.station.name,
+        queueNumber: q.position,
+        actualPosition: actualPosition
+      };
     }));
 
     // Parallelize Ably publishing with error isolation
@@ -436,10 +449,23 @@ app.post('/queue/:stationId/pop', async (req, res) => {
       orderBy: { position: 'asc' }
     });
 
-    const userQueueData = userQueues.map(q => ({
-      stationId: q.stationId,
-      stationName: q.station.name,
-      queueNumber: q.position
+    const userQueueData = await Promise.all(userQueues.map(async (q) => {
+      // Get all users in this station's queue to calculate actual position
+      const stationQueue = await prisma.queue.findMany({
+        where: { stationId: q.stationId },
+        orderBy: { position: 'asc' },
+        select: { userId: true, position: true }
+      });
+      
+      // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
+      const actualPosition = stationQueue.findIndex(sq => sq.userId === poppedUserId) + 1;
+      
+      return {
+        stationId: q.stationId,
+        stationName: q.station.name,
+        queueNumber: q.position,
+        actualPosition: actualPosition
+      };
     }));
 
     console.log(`Pop Queue Debug: Publishing to channels for user ${poppedUserId}`);
@@ -476,10 +502,23 @@ app.post('/queue/:stationId/pop', async (req, res) => {
         orderBy: { position: 'asc' }
       });
 
-      const remainingUserQueueData = remainingUserQueues.map(q => ({
-        stationId: q.stationId,
-        stationName: q.station.name,
-        queueNumber: q.position
+      const remainingUserQueueData = await Promise.all(remainingUserQueues.map(async (q) => {
+        // Get all users in this station's queue to calculate actual position
+        const stationQueue = await prisma.queue.findMany({
+          where: { stationId: q.stationId },
+          orderBy: { position: 'asc' },
+          select: { userId: true, position: true }
+        });
+        
+        // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
+        const actualPosition = stationQueue.findIndex(sq => sq.userId === remainingUserId) + 1;
+        
+        return {
+          stationId: q.stationId,
+          stationName: q.station.name,
+          queueNumber: q.position,
+          actualPosition: actualPosition
+        };
       }));
 
       publishOperations.push(
