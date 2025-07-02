@@ -282,8 +282,7 @@ app.post('/queue/:stationId', async (req, res) => {
     const userQueues = await prisma.queue.findMany({
       where: { userId },
       include: { station: { select: { name: true } } },
-      orderBy: { position: 'asc' },
-      select: { stationId: true, position: true, station: true }
+      orderBy: { position: 'asc' }
     });
 
     const userQueueData = userQueues.map(q => ({
@@ -378,8 +377,7 @@ app.post('/queue/:stationId/pop', async (req, res) => {
     const userQueues = await prisma.queue.findMany({
       where: { userId: poppedUserId },
       include: { station: { select: { name: true } } },
-      orderBy: { position: 'asc' },
-      select: { stationId: true, position: true, station: true }
+      orderBy: { position: 'asc' }
     });
 
     const userQueueData = userQueues.map(q => ({
@@ -421,8 +419,7 @@ app.get('/my-queues', async (req, res) => {
     const queues = await prisma.queue.findMany({
       where: { userId },
       include: { station: { select: { name: true } } },
-      orderBy: { position: 'asc' },
-      select: { stationId: true, position: true, station: true }
+      orderBy: { position: 'asc' }
     });
     res.json(queues.map(q => ({ stationId: q.stationId, stationName: q.station.name, queueNumber: q.position })));
   } catch (err) {
