@@ -346,7 +346,10 @@ app.post('/queue/:stationId', async (req, res) => {
       });
       
       // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
-      const actualPosition = stationQueue.findIndex(sq => sq.userId === userId) + 1;
+      const userIndex = stationQueue.findIndex(sq => sq.userId === userId);
+      const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
+      
+      console.log(`Join Queue Debug: User ${userId} in station ${q.stationId} - position ${q.position}, actual position ${actualPosition}`);
       
       return {
         stationId: q.stationId,
@@ -458,7 +461,10 @@ app.post('/queue/:stationId/pop', async (req, res) => {
       });
       
       // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
-      const actualPosition = stationQueue.findIndex(sq => sq.userId === poppedUserId) + 1;
+      const userIndex = stationQueue.findIndex(sq => sq.userId === poppedUserId);
+      const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
+      
+      console.log(`Pop Queue Debug: Popped user ${poppedUserId} in station ${q.stationId} - position ${q.position}, actual position ${actualPosition}`);
       
       return {
         stationId: q.stationId,
@@ -511,7 +517,14 @@ app.post('/queue/:stationId/pop', async (req, res) => {
         });
         
         // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
-        const actualPosition = stationQueue.findIndex(sq => sq.userId === remainingUserId) + 1;
+        const userIndex = stationQueue.findIndex(sq => sq.userId === remainingUserId);
+        const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
+        
+        console.log(`Pop Queue Debug: User ${remainingUserId} in station ${q.stationId}:`);
+        console.log(`  - Queue number: ${q.position}`);
+        console.log(`  - User index in queue: ${userIndex}`);
+        console.log(`  - Actual position: ${actualPosition}`);
+        console.log(`  - Station queue:`, stationQueue.map(sq => `${sq.userId}:${sq.position}`));
         
         return {
           stationId: q.stationId,
