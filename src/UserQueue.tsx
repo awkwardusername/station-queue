@@ -115,7 +115,6 @@ const UserQueue: React.FC = () => {
           
           // Create and start my queues poller
           myQueuesPollerRef.current = createMyQueuesPoller(
-            userId,
             (queues) => {
               console.log('UserQueue: Fallback polling - received queues:', queues);
               

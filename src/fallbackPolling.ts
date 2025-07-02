@@ -94,7 +94,6 @@ class FallbackPoller {
 
 // Factory functions for common polling scenarios
 export const createMyQueuesPoller = (
-  userId: string,
   onUpdate: (queues: QueueItem[]) => void,
   onError?: (error: Error) => void
 ) => {
