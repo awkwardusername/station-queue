@@ -216,8 +216,16 @@ const UserQueue: React.FC = () => {
             </select>
           </div>
           <div className="col-12 col-md-6 d-flex align-items-end justify-content-md-start justify-content-center">
-            <button className="btn btn-primary ms-md-2 w-100 w-md-auto" onClick={joinQueue} disabled={!selected || loading}>
-              {loading ? 'Joining...' : 'Join Queue'}
+            <button
+              className="btn btn-primary btn-lg join-queue-btn-xl ms-md-2 w-100 w-md-auto"
+              onClick={joinQueue}
+              disabled={!selected || loading || queueNumber !== null}
+            >
+              {loading
+                ? 'Joining...'
+                : queueNumber !== null
+                  ? 'Already in Queue'
+                  : 'Join Queue'}
             </button>
           </div>
         </div>        {queueNumber && (
