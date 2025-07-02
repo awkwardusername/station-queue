@@ -195,16 +195,23 @@ app.delete('/admin/stations/:id', async (req, res) => {
 
 
 // Get Ably API key for client-side initialization
+let ablyKeyCache = { value: null, expires: 0 };
+
 app.get('/config/ably-key', async (req, res) => {
   try {
     const keyName = 'VITE_ABLY_API_KEY';
-    
+    const now = Date.now();
+    // Cache for 5 minutes
+    if (ablyKeyCache.value && ablyKeyCache.expires > now) {
+      return res.json({ key: ablyKeyCache.value });
+    }
+
     const apiKey = await getConfigValue(keyName);
     if (!apiKey) {
       console.error(`${keyName} not found in database. Check your configuration.`);
       return res.status(404).json({ error: `Ably API key (${keyName}) not found` });
     }
-    
+
     // Only return the key value, not the entire key
     const keyParts = apiKey.split(':');
     if (keyParts.length === 2) {
@@ -213,7 +220,10 @@ app.get('/config/ably-key', async (req, res) => {
     } else {
       console.log(`Serving ${keyName} (format unknown)`);
     }
-    
+
+    ablyKeyCache.value = apiKey;
+    ablyKeyCache.expires = now + 5 * 60 * 1000; // 5 minutes
+
     res.json({ key: apiKey });
   } catch (err) {
     console.error('Error retrieving Ably API key:', err);
