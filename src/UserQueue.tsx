@@ -134,7 +134,7 @@ const UserQueue: React.FC = () => {
                   const nowQ = queues.find((q: QueueItem) => q.stationId === prevQ.stationId);
                   if (!nowQ) {
                     newNotifs.push({
-                      msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
+                      msg: `You were removed from "${prevQ.stationName}" queue (# ${prevQ.queueNumber}).`,
                       ts: Date.now(),
                       type: 'removed',
                       station: prevQ.stationName,
@@ -286,7 +286,7 @@ const UserQueue: React.FC = () => {
           if (!nowQ) {
             console.log('UserQueue: fetchMyQueues - User removed from queue:', prevQ);
             newNotifs.push({
-              msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
+              msg: `You were removed from "${prevQ.stationName}" queue (# ${prevQ.queueNumber}).`,
               ts: Date.now(),
               type: 'removed',
               station: prevQ.stationName,
@@ -503,7 +503,7 @@ const UserQueue: React.FC = () => {
                     if (!nowQ) {
                       console.log('UserQueue: User removed from queue:', prevQ);
                       newNotifs.push({
-                        msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
+                        msg: `You were removed from "${prevQ.stationName}" queue (# ${prevQ.queueNumber}).`,
                         ts: Date.now(),
                         type: 'removed',
                         station: prevQ.stationName,
@@ -711,7 +711,7 @@ const UserQueue: React.FC = () => {
                         <>
                           Removed from <b>{n.station}</b> queue
                           {typeof n.prevQueueNumber === 'number' && (
-                            <> (was position <b>{n.prevQueueNumber}</b>)</>
+                            <> (# <b>{n.prevQueueNumber}</b>)</>
                           )}
                           .
                         </>
