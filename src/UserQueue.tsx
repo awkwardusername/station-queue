@@ -33,7 +33,8 @@ const UserQueue: React.FC = () => {
   };
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  // prevQueuesRef is now unused, safe to remove after Ably integration
+  // Track previous queue state for notification comparison
+  const prevQueuesRef = React.useRef<QueueItem[]>([]);
   // Initialize Ably and get userId
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId') || '';
@@ -178,9 +179,43 @@ const UserQueue: React.FC = () => {
               );
               
               if (validData) {
+                // Notification logic: compare with previous queues
+                const prevQueues = prevQueuesRef.current;
+                const newNotifs: Notification[] = [];
+
+                prevQueues.forEach(prevQ => {
+                  const nowQ = queueData.find((q: QueueItem) => q.stationId === prevQ.stationId);
+                  if (!nowQ) {
+                    newNotifs.push({
+                      msg: `You were removed from "${prevQ.stationName}" queue.`,
+                      ts: Date.now(),
+                      type: 'removed',
+                      station: prevQ.stationName
+                    });
+                  } else if (nowQ.queueNumber !== prevQ.queueNumber) {
+                    newNotifs.push({
+                      msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
+                      ts: Date.now(),
+                      type: 'position',
+                      station: nowQ.stationName,
+                      queueNumber: nowQ.queueNumber
+                    });
+                  }
+                });
+
+                prevQueuesRef.current = queueData;
+
+                if (newNotifs.length > 0) {
+                  setNotifications(prev => {
+                    const updated = [...newNotifs, ...prev].slice(0, 10);
+                    localStorage.setItem('queueNotifications', JSON.stringify(updated));
+                    return updated;
+                  });
+                }
+
                 setMyQueues(queueData);
                 setLastUpdate(new Date());
-                
+
                 // Update queue number if needed
                 if (selected) {
                   const found = queueData.find(q => q.stationId === selected);
