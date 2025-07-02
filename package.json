@@ -2,7 +2,7 @@
   "name": "station-queue",
   "private": true,
   "version": "0.0.0",
-  "type": "module",  
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "prisma generate --no-engine && tsc -b && vite build",
@@ -47,6 +47,7 @@
     "globals": "^16.2.0",
     "netlify-cli": "^17.38.1",
     "prisma": "^6.11.0",
+    "rollup-plugin-visualizer": "^6.0.3",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3",
     "typescript": "~5.8.3",

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import UserQueue from './UserQueue';
-import PersonQueue from './PersonQueue';
-import AdminPanel from './AdminPanel';
+import { Suspense, lazy } from 'react';
+const UserQueue = lazy(() => import('./UserQueue'));
+const PersonQueue = lazy(() => import('./PersonQueue'));
+const AdminPanel = lazy(() => import('./AdminPanel'));
 import { initAbly } from './ablyUtils';
 import './App.css';
 
@@ -26,9 +27,11 @@ function App() {
           <button className={`btn btn-outline-primary${view === 'admin' ? ' active' : ''}`} onClick={() => setView('admin')}>Admin</button>
         </nav>
         <div className="w-100">
-          {view === 'user' && <UserQueue />}
-          {view === 'person' && <PersonQueue onSwitchView={setView} />}
-          {view === 'admin' && <AdminPanel onSwitchView={setView} />}
+          <Suspense fallback={<div>Loading...</div>}>
+            {view === 'user' && <UserQueue />}
+            {view === 'person' && <PersonQueue onSwitchView={setView} />}
+            {view === 'admin' && <AdminPanel onSwitchView={setView} />}
+          </Suspense>
         </div>
       </div>
     </div>
