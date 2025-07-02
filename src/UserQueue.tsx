@@ -1,8 +1,10 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
+import './ConnectionStatus.css';
 import React, { useEffect, useState, useCallback } from 'react';
 import api from './api';
-import { initAbly, subscribeToMyQueueUpdates, CHANNEL_NAMES, EVENT_NAMES, subscribeToChannel } from './ablyUtils';
-
+import { initAbly, subscribeToMyQueueUpdates, CHANNEL_NAMES, EVENT_NAMES, subscribeToChannel, addConnectionStateListener, removeConnectionStateListener } from './ablyUtils';
+import { createMyQueuesPoller, createStationsPoller, POLLING_INTERVALS } from './fallbackPolling';
+import { v4 as uuidv4 } from 'uuid';
 interface Station {
   id: string;
   name: string;
@@ -22,6 +24,9 @@ const UserQueue: React.FC = () => {
   const [myQueues, setMyQueues] = useState<QueueItem[]>([]);
   const [userId, setUserId] = useState<string>('');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  
+  // Fallback polling state
+  const [isUsingFallback, setIsUsingFallback] = useState(false);
 
   // Notification bell state
   type Notification = {
@@ -37,9 +42,21 @@ const UserQueue: React.FC = () => {
   const [bellAnimate, setBellAnimate] = useState(false);
   // Track previous queue state for notification comparison
   const prevQueuesRef = React.useRef<QueueItem[]>([]);
+  // Fallback polling instances
+  const myQueuesPollerRef = React.useRef<ReturnType<typeof createMyQueuesPoller> | null>(null);
+  const stationsPollerRef = React.useRef<ReturnType<typeof createStationsPoller> | null>(null);
+
   // Initialize Ably and get userId
   useEffect(() => {
-    const storedUserId = localStorage.getItem('userId') || '';
+    let storedUserId = localStorage.getItem('userId');
+    
+    // Generate a new userId if one doesn't exist
+    if (!storedUserId) {
+      storedUserId = uuidv4();
+      localStorage.setItem('userId', storedUserId);
+      console.log('UserQueue: Generated new userId:', storedUserId);
+    }
+    
     console.log('UserQueue: Initializing with userId', storedUserId);
     setUserId(storedUserId);
 
@@ -75,6 +92,154 @@ const UserQueue: React.FC = () => {
     }
   }, []);
 
+  // Fallback polling management based on connection state
+  useEffect(() => {
+    if (!userId) return;
+
+    const connectionStateListener = (state: string) => {
+      console.log('UserQueue: Connection state changed to:', state);
+
+      // Manage fallback polling based on connection state
+      if (state === 'connected') {
+        // Real-time is working, stop fallback polling
+        if (myQueuesPollerRef.current?.isActive()) {
+          console.log('UserQueue: Stopping fallback polling - real-time connected');
+          myQueuesPollerRef.current.stop();
+          stationsPollerRef.current?.stop();
+          setIsUsingFallback(false);
+        }
+      } else if (state === 'failed' || state === 'disconnected') {
+        // Real-time is not working, start fallback polling
+        if (!myQueuesPollerRef.current?.isActive()) {
+          console.log('UserQueue: Starting fallback polling - real-time failed');
+          
+          // Create and start my queues poller
+          myQueuesPollerRef.current = createMyQueuesPoller(
+            userId,
+            (queues) => {
+              console.log('UserQueue: Fallback polling - received queues:', queues);
+              
+              // Apply the same notification logic as Ably callback
+              const prevQueues = prevQueuesRef.current;
+              let skipFirst = false;
+              if (prevQueues.length === 0) {
+                // First update, just set ref and skip notifications
+                skipFirst = true;
+                prevQueuesRef.current = queues;
+              }
+              const newNotifs: Notification[] = [];
+
+              if (!skipFirst) {
+                prevQueues.forEach(prevQ => {
+                  const nowQ = queues.find((q: QueueItem) => q.stationId === prevQ.stationId);
+                  if (!nowQ) {
+                    newNotifs.push({
+                      msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
+                      ts: Date.now(),
+                      type: 'removed',
+                      station: prevQ.stationName,
+                      prevQueueNumber: prevQ.queueNumber
+                    });
+                  } else if (nowQ.queueNumber !== prevQ.queueNumber) {
+                    newNotifs.push({
+                      msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
+                      ts: Date.now(),
+                      type: 'position',
+                      station: nowQ.stationName,
+                      queueNumber: nowQ.queueNumber
+                    });
+                  }
+                });
+
+                if (newNotifs.length > 0) {
+                  setNotifications(prev => {
+                    const updated = [...newNotifs, ...prev].slice(0, 10);
+                    localStorage.setItem('queueNotifications', JSON.stringify(updated));
+                    return updated;
+                  });
+                  // Animate bell and play sound
+                  setBellAnimate(true);
+                  console.log('UserQueue: Playing notification sound and animating bell');
+                  
+                  // Play sound (simple beep) with better error handling
+                  try {
+                    // Check if AudioContext is supported
+                    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                    if (AudioContextClass) {
+                      const ctx = new AudioContextClass();
+                      const o = ctx.createOscillator();
+                      const g = ctx.createGain();
+                      o.type = 'sine';
+                      o.frequency.value = 1200;
+                      g.gain.value = 0.08;
+                      o.connect(g);
+                      g.connect(ctx.destination);
+                      o.start();
+                      o.stop(ctx.currentTime + 0.18);
+                      o.onended = () => {
+                        try {
+                          ctx.close();
+                        } catch {
+                          // Ignore close errors
+                        }
+                      };
+                    } else {
+                      console.warn('AudioContext not supported, skipping notification sound');
+                    }
+                  } catch (audioError) {
+                    console.warn('Could not play notification sound:', audioError);
+                  }
+                }
+                prevQueuesRef.current = queues;
+              }
+
+              setMyQueues(queues);
+              setLastUpdate(new Date());
+              
+              // Update queue number for selected station
+              if (selected) {
+                const found = queues.find(q => q.stationId === selected);
+                setQueueNumber(found ? found.queueNumber : null);
+              }
+            },
+            (error) => {
+              console.error('UserQueue: Fallback polling error:', error);
+            }
+          );
+
+          // Create and start stations poller
+          stationsPollerRef.current = createStationsPoller(
+            (stations) => {
+              console.log('UserQueue: Fallback polling - received stations:', stations);
+              setStations(stations);
+            },
+            (error) => {
+              console.error('UserQueue: Stations fallback polling error:', error);
+            }
+          );
+
+          const interval = state === 'failed' ? POLLING_INTERVALS.FAST : POLLING_INTERVALS.NORMAL;
+          myQueuesPollerRef.current.start(interval);
+          stationsPollerRef.current.start(interval);
+          setIsUsingFallback(true);
+        }
+      }
+    };
+
+    addConnectionStateListener(connectionStateListener);
+
+    return () => {
+      removeConnectionStateListener(connectionStateListener);
+      // Clean up pollers
+      if (myQueuesPollerRef.current) {
+        myQueuesPollerRef.current.stop();
+      }
+      if (stationsPollerRef.current) {
+        stationsPollerRef.current.stop();
+      }
+    };
+  }, [userId, selected]);
+
   const fetchStations = useCallback(async () => {
     console.log('UserQueue: Fetching stations');
     try {
@@ -93,12 +258,95 @@ const UserQueue: React.FC = () => {
     try {
       const myRes = await api.get<QueueItem[]>('/my-queues');
       console.log('UserQueue: My queues data received:', myRes.data);
-      setMyQueues(Array.isArray(myRes.data) ? myRes.data : []);
+      const newQueueData = Array.isArray(myRes.data) ? myRes.data : [];
+      
+      // Apply notification logic here too (in case Ably updates are missed)
+      const prevQueues = prevQueuesRef.current;
+      console.log('UserQueue: fetchMyQueues notification check - Previous:', prevQueues, 'Current:', newQueueData);
+      
+      if (prevQueues.length > 0) {
+        const newNotifs: Notification[] = [];
+        
+        // Check for removed queues (user was popped or left)
+        prevQueues.forEach(prevQ => {
+          const nowQ = newQueueData.find((q: QueueItem) => q.stationId === prevQ.stationId);
+          if (!nowQ) {
+            console.log('UserQueue: fetchMyQueues - User removed from queue:', prevQ);
+            newNotifs.push({
+              msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
+              ts: Date.now(),
+              type: 'removed',
+              station: prevQ.stationName,
+              prevQueueNumber: prevQ.queueNumber
+            });
+          }
+        });
+
+        // Check for position changes
+        newQueueData.forEach((nowQ: QueueItem) => {
+          const prevQ = prevQueues.find(p => p.stationId === nowQ.stationId);
+          if (prevQ && nowQ.queueNumber !== prevQ.queueNumber) {
+            console.log('UserQueue: fetchMyQueues - Position changed:', prevQ.queueNumber, '->', nowQ.queueNumber);
+            newNotifs.push({
+              msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
+              ts: Date.now(),
+              type: 'position',
+              station: nowQ.stationName,
+              queueNumber: nowQ.queueNumber
+            });
+          }
+        });
+
+        if (newNotifs.length > 0) {
+          console.log('UserQueue: fetchMyQueues - Generated notifications:', newNotifs);
+          setNotifications(prev => {
+            const updated = [...newNotifs, ...prev].slice(0, 10);
+            localStorage.setItem('queueNotifications', JSON.stringify(updated));
+            return updated;
+          });
+          // Animate bell and play sound
+          setBellAnimate(true);
+          console.log('UserQueue: Playing notification sound and animating bell (fetchMyQueues)');
+          
+          // Play sound
+          try {
+            const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            if (AudioContextClass) {
+              const ctx = new AudioContextClass();
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              o.type = 'sine';
+              o.frequency.value = 1200;
+              g.gain.value = 0.08;
+              o.connect(g);
+              g.connect(ctx.destination);
+              o.start();
+              o.stop(ctx.currentTime + 0.18);
+              o.onended = () => {
+                try {
+                  ctx.close();
+                } catch {
+                  // Ignore close errors
+                }
+              };
+            }
+          } catch (audioError) {
+            console.warn('Could not play notification sound:', audioError);
+          }
+        }
+        
+        prevQueuesRef.current = newQueueData;
+      } else {
+        // First time, just set the ref
+        prevQueuesRef.current = newQueueData;
+      }
+      
+      setMyQueues(newQueueData);
       setLastUpdate(new Date());
       
       // Update the queue number for the selected station if needed
       if (selected) {
-        const found = myRes.data.find(q => q.stationId === selected);
+        const found = newQueueData.find(q => q.stationId === selected);
         setQueueNumber(found ? found.queueNumber : null);
       }
     } catch (error) {
@@ -144,6 +392,7 @@ const UserQueue: React.FC = () => {
     let stationsUnsubscribe: (() => void) = () => {};
     let stationsDeleteUnsubscribe: (() => void) = () => {};
     let myQueuesUnsubscribe: (() => void) = () => {};
+    const queuePopUnsubscribes: (() => void)[] = [];
     
     const setupSubscriptions = async () => {
       try {
@@ -165,10 +414,27 @@ const UserQueue: React.FC = () => {
             fetchStations();
           }
         );
+
+        // Subscribe to queue pop events - this helps us immediately know when someone was popped
+        // even before the personal queue updates arrive
+        if (stations.length > 0) {
+          for (const station of stations) {
+            const unsubscribe = await subscribeToChannel(
+              CHANNEL_NAMES.QUEUE(station.id),
+              EVENT_NAMES.QUEUE_POP,
+              (data: unknown) => {
+                console.log('UserQueue: Queue pop event received for station', station.id, ':', data);
+                // Immediately refresh my queues when someone is popped from any queue
+                fetchMyQueues();
+              }
+            );
+            queuePopUnsubscribes.push(unsubscribe);
+          }
+        }
         
     // Subscribe to my queue updates
-        myQueuesUnsubscribe = await subscribeToMyQueueUpdates(userId, (queueData) => {
-          console.log('UserQueue: Received my queues update via Ably:', queueData);
+    myQueuesUnsubscribe = await subscribeToMyQueueUpdates(userId, (queueData) => {
+      console.log('UserQueue: Received my queues update via Ably for userId:', userId, 'data:', queueData);
           
           try {
             if (Array.isArray(queueData)) {
@@ -183,18 +449,25 @@ const UserQueue: React.FC = () => {
               if (validData) {
                 // Notification logic: compare with previous queues
                 const prevQueues = prevQueuesRef.current;
+                console.log('UserQueue: Comparing queues - Previous:', prevQueues, 'Current:', queueData);
+                
                 let skipFirst = false;
                 if (prevQueues.length === 0) {
                   // First update, just set ref and skip notifications
                   skipFirst = true;
+                  console.log('UserQueue: First queue update, skipping notifications');
                   prevQueuesRef.current = queueData;
                 }
                 const newNotifs: Notification[] = [];
 
                 if (!skipFirst) {
+                  console.log('UserQueue: Processing notifications - prevQueues:', prevQueues, 'newQueues:', queueData);
+                  
+                  // Check for removed queues (user was popped or left)
                   prevQueues.forEach(prevQ => {
                     const nowQ = queueData.find((q: QueueItem) => q.stationId === prevQ.stationId);
                     if (!nowQ) {
+                      console.log('UserQueue: User removed from queue:', prevQ);
                       newNotifs.push({
                         msg: `You were removed from "${prevQ.stationName}" queue (was position ${prevQ.queueNumber}).`,
                         ts: Date.now(),
@@ -202,18 +475,46 @@ const UserQueue: React.FC = () => {
                         station: prevQ.stationName,
                         prevQueueNumber: prevQ.queueNumber
                       });
-                    } else if (nowQ.queueNumber !== prevQ.queueNumber) {
-                      newNotifs.push({
-                        msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
-                        ts: Date.now(),
-                        type: 'position',
-                        station: nowQ.stationName,
-                        queueNumber: nowQ.queueNumber
-                      });
                     }
                   });
 
+                  // Simple approach: Check if any queue in the same station got shorter
+                  // (this indicates someone was removed from that station's queue)
+                  queueData.forEach((nowQ: QueueItem) => {
+                    const prevQ = prevQueues.find(p => p.stationId === nowQ.stationId);
+                    if (prevQ) {
+                      console.log(`UserQueue: Checking station ${nowQ.stationId} - prev: ${prevQ.queueNumber}, now: ${nowQ.queueNumber}`);
+                      
+                      // Simple check: if position number is the same, but this is a queue update after a pop,
+                      // then someone ahead was likely removed
+                      if (nowQ.queueNumber === prevQ.queueNumber) {
+                        // Position stayed same - this happens when someone ahead was popped
+                        console.log('UserQueue: Position stayed same but queue was updated - someone ahead was likely served');
+                        newNotifs.push({
+                          msg: `Queue update for "${nowQ.stationName}" - you may have moved up in line!`,
+                          ts: Date.now(),
+                          type: 'position',
+                          station: nowQ.stationName,
+                          queueNumber: nowQ.queueNumber
+                        });
+                      } else if (nowQ.queueNumber !== prevQ.queueNumber) {
+                        // Position actually changed
+                        console.log('UserQueue: Position changed:', prevQ.queueNumber, '->', nowQ.queueNumber);
+                        newNotifs.push({
+                          msg: `Your position in "${nowQ.stationName}" changed to ${nowQ.queueNumber}.`,
+                          ts: Date.now(),
+                          type: 'position',
+                          station: nowQ.stationName,
+                          queueNumber: nowQ.queueNumber
+                        });
+                      }
+                    }
+                  });
+
+                  console.log('UserQueue: Generated notifications:', newNotifs);
+
                   if (newNotifs.length > 0) {
+                    console.log('UserQueue: Generated notifications:', newNotifs);
                     setNotifications(prev => {
                       const updated = [...newNotifs, ...prev].slice(0, 10);
                       localStorage.setItem('queueNotifications', JSON.stringify(updated));
@@ -221,23 +522,43 @@ const UserQueue: React.FC = () => {
                     });
                     // Animate bell and play sound
                     setBellAnimate(true);
-                    // Play sound (simple beep)
+                    console.log('UserQueue: Playing notification sound and animating bell (Ably)');
+                    
+                    // Play sound (simple beep) with better error handling
                     try {
-                      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-                      const o = ctx.createOscillator();
-                      const g = ctx.createGain();
-                      o.type = 'sine';
-                      o.frequency.value = 1200;
-                      g.gain.value = 0.08;
-                      o.connect(g);
-                      g.connect(ctx.destination);
-                      o.start();
-                      o.stop(ctx.currentTime + 0.18);
-                      o.onended = () => ctx.close();
-                    } catch {
-                      // Ignore audio errors (e.g., user gesture required)
+                      // Check if AudioContext is supported
+                      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                      if (AudioContextClass) {
+                        const ctx = new AudioContextClass();
+                        const o = ctx.createOscillator();
+                        const g = ctx.createGain();
+                        o.type = 'sine';
+                        o.frequency.value = 1200;
+                        g.gain.value = 0.08;
+                        o.connect(g);
+                        g.connect(ctx.destination);
+                        o.start();
+                        o.stop(ctx.currentTime + 0.18);
+                        o.onended = () => {
+                          try {
+                            ctx.close();
+                          } catch {
+                            // Ignore close errors
+                          }
+                        };
+                      } else {
+                        console.warn('AudioContext not supported, skipping notification sound');
+                      }
+                    } catch (audioError) {
+                      console.warn('Could not play notification sound:', audioError);
                     }
+                  } else {
+                    console.log('UserQueue: No notifications to show');
                   }
+                  
+                  prevQueuesRef.current = queueData;
+                } else {
+                  // Still update the ref even for first load
                   prevQueuesRef.current = queueData;
                 }
 
@@ -270,8 +591,9 @@ const UserQueue: React.FC = () => {
       stationsUnsubscribe();
       stationsDeleteUnsubscribe();
       myQueuesUnsubscribe();
+      queuePopUnsubscribes.forEach(unsub => unsub());
     };
-  }, [userId, fetchStations, selected]);
+  }, [userId, fetchStations, fetchMyQueues, stations]);
 
   const joinQueue = async () => {
     if (!selected) return;
@@ -291,6 +613,18 @@ const UserQueue: React.FC = () => {
   return (
     <div className="user-queue app-center">
       <div className="container py-4 px-2 px-md-4" style={{position: 'relative'}}>
+        {/* Fallback Polling Indicator - only show when polling is active */}
+        {isUsingFallback && (
+          <div style={{position: 'absolute', top: 16, left: 24, zIndex: 1000}}>
+            <span
+              className="badge bg-info"
+              title="Using fallback polling due to real-time connection issues"
+            >
+              📡 Polling Mode
+            </span>
+          </div>
+        )}
+        
         {/* Notification Bell */}
         <div style={{position: 'absolute', top: 16, right: 24, zIndex: 1100}}>
           <span
@@ -423,6 +757,63 @@ const UserQueue: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Footer with Test Button */}
+        <div className="mt-4 text-center border-top pt-3">
+          <button
+            className="btn btn-sm btn-outline-secondary"
+            onClick={() => {
+              // Test notification
+              const testNotification: Notification = {
+                msg: 'This is a test notification!',
+                ts: Date.now(),
+                type: 'position',
+                station: 'Test Station',
+                queueNumber: 1
+              };
+              
+              setNotifications(prev => {
+                const updated = [testNotification, ...prev].slice(0, 10);
+                localStorage.setItem('queueNotifications', JSON.stringify(updated));
+                return updated;
+              });
+              
+              setBellAnimate(true);
+              console.log('Test notification created');
+              
+              // Play test sound
+              try {
+                const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                if (AudioContextClass) {
+                  const ctx = new AudioContextClass();
+                  const o = ctx.createOscillator();
+                  const g = ctx.createGain();
+                  o.type = 'sine';
+                  o.frequency.value = 1200;
+                  g.gain.value = 0.08;
+                  o.connect(g);
+                  g.connect(ctx.destination);
+                  o.start();
+                  o.stop(ctx.currentTime + 0.18);
+                  o.onended = () => {
+                    try {
+                      ctx.close();
+                    } catch {
+                      // Ignore close errors
+                    }
+                  };
+                } else {
+                  console.warn('AudioContext not supported, skipping test sound');
+                }
+              } catch (audioError) {
+                console.warn('Could not play test sound:', audioError);
+              }
+            }}
+            title="Test notification system"
+          >
+            🧪 Test Notifications
+          </button>
         </div>
       </div>
     </div>

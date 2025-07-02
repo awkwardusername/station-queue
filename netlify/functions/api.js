@@ -88,15 +88,60 @@ const EVENT_NAMES = {
   STATION_DELETE: 'station:delete',
 };
 
-// Helper to publish to Ably channels
-const publishToChannel = async (channelName, eventName, data) => {
-  // Cache Ably instance for the lifetime of the function
-  if (!ably) {
-    ably = await initializeAbly();
-    if (!ably) return Promise.reject('Ably not initialized');
-  }
-  const channel = ably.channels.get(channelName);
-  return channel.publish(eventName, data);
+// Enhanced helper to publish to Ably channels with retry logic
+const publishToChannel = async (channelName, eventName, data, maxRetries = 3) => {
+  const attemptPublish = async (retryCount = 0) => {
+    try {
+      // Cache Ably instance for the lifetime of the function
+      if (!ably) {
+        ably = await initializeAbly();
+        if (!ably) {
+          throw new Error('Ably not initialized');
+        }
+      }
+      
+      const channel = ably.channels.get(channelName);
+      console.log(`Publishing to ${channelName}:${eventName}`, data);
+      
+      const result = await channel.publish(eventName, data);
+      console.log(`Successfully published to ${channelName}:${eventName}`);
+      return result;
+    } catch (error) {
+      console.error(`Error publishing to ${channelName}:${eventName} (attempt ${retryCount + 1}):`, error);
+      
+      if (retryCount < maxRetries) {
+        const delay = 1000 * Math.pow(2, retryCount); // Exponential backoff
+        console.log(`Retrying publish to ${channelName}:${eventName} in ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Reset ably instance on retry to ensure fresh connection
+        if (retryCount > 0) {
+          ably = null;
+        }
+        
+        return attemptPublish(retryCount + 1);
+      }
+      
+      console.error(`Failed to publish to ${channelName}:${eventName} after ${maxRetries + 1} attempts`);
+      throw error;
+    }
+  };
+
+  return attemptPublish();
+};
+
+// Helper to safely publish to multiple channels in parallel with error isolation
+const publishToChannelsParallel = async (publishPromises) => {
+  const results = await Promise.allSettled(publishPromises);
+  
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.error(`Publishing failed for operation ${index + 1}:`, result.reason);
+    }
+  });
+  
+  // Return the number of successful publishes
+  return results.filter(result => result.status === 'fulfilled').length;
 };
 
 const app = express();
@@ -163,7 +208,8 @@ app.delete('/admin/stations/:id', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   const dbSecret = await getAdminSecret();
   if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
-  const { id } = req.params;  try {
+  const { id } = req.params;  
+  try {
     console.log(`Deleting station ${id} and all associated data...`);
     
     // Delete all queue entries for this station
@@ -250,6 +296,12 @@ app.get('/stations', async (req, res) => {
 app.post('/queue/:stationId', async (req, res) => {
   const { stationId } = req.params;
   const userId = req.userId;
+  console.log(`Join Queue Debug: userId from request: ${userId}, stationId: ${stationId}`);
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'User ID required' });
+  }
+  
   try {
     const station = await prisma.station.findUnique({
       where: { id: stationId },
@@ -291,8 +343,8 @@ app.post('/queue/:stationId', async (req, res) => {
       queueNumber: q.position
     }));
 
-    // Parallelize Ably publishing
-    await Promise.all([
+    // Parallelize Ably publishing with error isolation
+    const publishResults = await publishToChannelsParallel([
       publishToChannel(
         CHANNEL_NAMES.QUEUE(stationId),
         EVENT_NAMES.QUEUE_UPDATE,
@@ -304,6 +356,8 @@ app.post('/queue/:stationId', async (req, res) => {
         userQueueData
       )
     ]);
+
+    console.log(`Published ${publishResults}/2 real-time updates for queue join`);
 
     res.json({ queueNumber: position });
   } catch (err) {
@@ -341,7 +395,7 @@ app.post('/queue/:stationId/pop', async (req, res) => {
       managerId = parsed.managerId;
     } catch (e) {
       console.log('Pop Queue Debug: Failed to parse Buffer body', { error: e });
-      res.status(400).json({ error: 'Invalid request body format', details: e.message });
+      return res.status(400).json({ error: 'Invalid request body format', details: e.message });
     }
   }
 
@@ -363,6 +417,8 @@ app.post('/queue/:stationId/pop', async (req, res) => {
     if (!first) return res.json({ popped: null });
     
     const poppedUserId = first.userId;
+    console.log(`Pop Queue Debug: Popping user ${poppedUserId} from station ${stationId}`);
+    
     await prisma.queue.delete({ where: { stationId_userId: { stationId, userId: poppedUserId } } });
     
     // Get updated queue
@@ -386,8 +442,15 @@ app.post('/queue/:stationId/pop', async (req, res) => {
       queueNumber: q.position
     }));
 
-    // Parallelize Ably publishing
-    await Promise.all([
+    console.log(`Pop Queue Debug: Publishing to channels for user ${poppedUserId}`);
+    console.log(`Pop Queue Debug: User queue data:`, userQueueData);
+
+    // Get all remaining users in this queue to notify them of position changes
+    const remainingUserIds = queue.map(q => q.userId);
+    console.log(`Pop Queue Debug: Remaining users in queue:`, remainingUserIds);
+
+    // Prepare publish operations
+    const publishOperations = [
       publishToChannel(
         CHANNEL_NAMES.QUEUE(stationId),
         EVENT_NAMES.QUEUE_UPDATE,
@@ -403,7 +466,35 @@ app.post('/queue/:stationId/pop', async (req, res) => {
         EVENT_NAMES.QUEUE_UPDATE,
         userQueueData
       )
-    ]);
+    ];
+
+    // Update personal queues for all remaining users so they get notifications
+    for (const remainingUserId of remainingUserIds) {
+      const remainingUserQueues = await prisma.queue.findMany({
+        where: { userId: remainingUserId },
+        include: { station: { select: { name: true } } },
+        orderBy: { position: 'asc' }
+      });
+
+      const remainingUserQueueData = remainingUserQueues.map(q => ({
+        stationId: q.stationId,
+        stationName: q.station.name,
+        queueNumber: q.position
+      }));
+
+      publishOperations.push(
+        publishToChannel(
+          CHANNEL_NAMES.MY_QUEUES(remainingUserId),
+          EVENT_NAMES.QUEUE_UPDATE,
+          remainingUserQueueData
+        )
+      );
+    }
+
+    // Parallelize Ably publishing with error isolation
+    const publishResults = await publishToChannelsParallel(publishOperations);
+
+    console.log(`Published ${publishResults}/${publishOperations.length} real-time updates for queue pop`);
 
     res.json({ popped: poppedUserId });
   } catch (err) {
@@ -415,6 +506,12 @@ app.post('/queue/:stationId/pop', async (req, res) => {
 // User: view all queues
 app.get('/my-queues', async (req, res) => {
   const userId = req.userId;
+  console.log(`My Queues Debug: userId from request: ${userId}`);
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'User ID required' });
+  }
+  
   try {
     const queues = await prisma.queue.findMany({
       where: { userId },

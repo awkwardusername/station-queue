@@ -1,4 +1,5 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
+import './ConnectionStatus.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import api from './api';
 import { initAbly, subscribeToQueueUpdates } from './ablyUtils';
@@ -16,7 +17,9 @@ const PersonQueue: React.FC<PersonQueueProps> = ({ onSwitchView }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [popped, setPopped] = useState<string | null>(null);
-  const [stations, setStations] = useState<Station[]>([]);  // Initialize Ably
+  const [stations, setStations] = useState<Station[]>([]);
+  
+  // Initialize Ably
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId') || '';
     if (storedUserId) {
@@ -142,6 +145,7 @@ const PersonQueue: React.FC<PersonQueueProps> = ({ onSwitchView }) => {
       if (unsubscribe) unsubscribe();
     };
   }, [stationId, managerId]);
+
 
   const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
   // Check if we're coming from the admin panel

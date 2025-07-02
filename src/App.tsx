@@ -3,11 +3,13 @@ import { Suspense, lazy } from 'react';
 const UserQueue = lazy(() => import('./UserQueue'));
 const PersonQueue = lazy(() => import('./PersonQueue'));
 const AdminPanel = lazy(() => import('./AdminPanel'));
-import { initAbly } from './ablyUtils';
+import { initAbly, addConnectionStateListener, removeConnectionStateListener } from './ablyUtils';
 import './App.css';
+import './ConnectionStatus.css';
 
 function App() {
   const [view, setView] = useState<'user' | 'person' | 'admin'>('user');
+  const [connectionState, setConnectionState] = useState<string>('disconnected');
 
   // Initialize Ably when app starts
   useEffect(() => {
@@ -15,6 +17,20 @@ function App() {
     if (userId) {
       initAbly(userId);
     }
+  }, []);
+
+  // Monitor connection state globally
+  useEffect(() => {
+    const connectionStateListener = (state: string) => {
+      console.log('App: Connection state changed to:', state);
+      setConnectionState(state);
+    };
+
+    addConnectionStateListener(connectionStateListener);
+
+    return () => {
+      removeConnectionStateListener(connectionStateListener);
+    };
   }, []);
 
   return (
@@ -32,6 +48,25 @@ function App() {
             {view === 'person' && <PersonQueue onSwitchView={setView} />}
             {view === 'admin' && <AdminPanel onSwitchView={setView} />}
           </Suspense>
+        </div>
+      </div>
+      
+      {/* Global Connection Status Footer */}
+      <div className="fixed-bottom d-flex justify-content-center" style={{pointerEvents: 'none', zIndex: 1000}}>
+        <div className="mb-3" style={{pointerEvents: 'auto'}}>
+          <span
+            className={`badge connection-status ${
+              connectionState === 'connected' ? 'bg-success' :
+              connectionState === 'connecting' ? 'bg-warning' :
+              'bg-danger'
+            }`}
+            title={`Real-time connection: ${connectionState}`}
+          >
+            {connectionState === 'connected' && '🟢 Live'}
+            {connectionState === 'connecting' && '🟡 Connecting'}
+            {connectionState === 'disconnected' && '🔴 Offline'}
+            {connectionState === 'failed' && '🔴 Failed'}
+          </span>
         </div>
       </div>
     </div>
