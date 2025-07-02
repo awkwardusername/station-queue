@@ -2,7 +2,8 @@
   "name": "station-queue",
   "private": true,
   "version": "0.0.0",
-  "type": "module",    "scripts": {
+  "type": "module",  
+  "scripts": {
     "dev": "vite",
     "build": "prisma generate --no-engine && tsc -b && vite build",
     "lint": "eslint .",

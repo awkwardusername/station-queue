@@ -197,9 +197,7 @@ app.delete('/admin/stations/:id', async (req, res) => {
 // Get Ably API key for client-side initialization
 app.get('/config/ably-key', async (req, res) => {
   try {
-    // Check if this is a frontend request (use the client-side key)
-    const isFrontend = req.query.frontend === 'true';
-    const keyName = isFrontend ? 'VITE_ABLY_API_KEY' : 'ABLY_API_KEY';
+    const keyName = 'VITE_ABLY_API_KEY';
     
     const apiKey = await getConfigValue(keyName);
     if (!apiKey) {
