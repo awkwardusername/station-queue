@@ -570,7 +570,33 @@ app.get('/my-queues', async (req, res) => {
       include: { station: { select: { name: true } } },
       orderBy: { position: 'asc' }
     });
-    res.json(queues.map(q => ({ stationId: q.stationId, stationName: q.station.name, queueNumber: q.position })));
+    const result = await Promise.all(queues.map(async (q) => {
+      // Get all users in this station's queue to calculate actual position
+      const stationQueue = await prisma.queue.findMany({
+        where: { stationId: q.stationId },
+        orderBy: { position: 'asc' },
+        select: { userId: true, position: true }
+      });
+      
+      // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
+      const userIndex = stationQueue.findIndex(sq => sq.userId === userId);
+      const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
+      
+      console.log(`My Queues Debug: User ${userId} in station ${q.stationId}:`);
+      console.log(`  - Queue number: ${q.position}`);
+      console.log(`  - User index in queue: ${userIndex}`);
+      console.log(`  - Actual position: ${actualPosition}`);
+      console.log(`  - Station queue:`, stationQueue.map(sq => `${sq.userId}:${sq.position}`));
+      
+      return {
+        stationId: q.stationId,
+        stationName: q.station.name,
+        queueNumber: q.position,
+        actualPosition: actualPosition
+      };
+    }));
+    
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: 'DB error' });
   }

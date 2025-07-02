@@ -256,7 +256,12 @@ const UserQueue: React.FC = () => {
   const calculateActualPosition = (queues: QueueItem[], targetStationId: string, targetQueueNumber: number): number => {
     const stationQueues = queues.filter(q => q.stationId === targetStationId);
     const sortedQueues = stationQueues.sort((a, b) => a.queueNumber - b.queueNumber);
-    return sortedQueues.findIndex(q => q.queueNumber === targetQueueNumber) + 1;
+    const position = sortedQueues.findIndex(q => q.queueNumber === targetQueueNumber) + 1;
+    console.log(`calculateActualPosition: Station ${targetStationId}, target queue number ${targetQueueNumber}`);
+    console.log(`  - Station queues:`, stationQueues.map(q => `${q.queueNumber}`));
+    console.log(`  - Sorted queues:`, sortedQueues.map(q => `${q.queueNumber}`));
+    console.log(`  - Calculated position:`, position);
+    return position;
   };
 
   const fetchMyQueues = useCallback(async () => {
@@ -294,8 +299,8 @@ const UserQueue: React.FC = () => {
         newQueueData.forEach((nowQ: QueueItem) => {
           const prevQ = prevQueues.find(p => p.stationId === nowQ.stationId);
           if (prevQ) {
-            const currentActualPosition = nowQ.actualPosition || calculateActualPosition(newQueueData, nowQ.stationId, nowQ.queueNumber);
-            const prevActualPosition = prevQ.actualPosition || calculateActualPosition(prevQueues, prevQ.stationId, prevQ.queueNumber);
+            const currentActualPosition = nowQ.actualPosition || 1; // Fallback to 1 if no API data
+            const prevActualPosition = prevQ.actualPosition || 1; // Fallback to 1 if no API data
             
             console.log(`UserQueue: fetchMyQueues - Station ${nowQ.stationId}: Position number ${prevQ.queueNumber} -> ${nowQ.queueNumber}, Actual position ${prevActualPosition} -> ${currentActualPosition}`);
             
@@ -514,9 +519,9 @@ const UserQueue: React.FC = () => {
                     if (prevQ) {
                       console.log(`UserQueue: Checking station ${nowQ.stationId} - prev: ${prevQ.queueNumber}, now: ${nowQ.queueNumber}`);
                       
-                      // Use actual positions from API or fallback to calculation
-                      const currentActualPosition = nowQ.actualPosition || calculateActualPosition(queueData, nowQ.stationId, nowQ.queueNumber);
-                      const prevActualPosition = prevQ.actualPosition || calculateActualPosition(prevQueues, prevQ.stationId, prevQ.queueNumber);
+                      // Use actual positions from API only (don't fallback to frontend calculation)
+                      const currentActualPosition = nowQ.actualPosition || 1;
+                      const prevActualPosition = prevQ.actualPosition || 1;
                       
                       console.log(`UserQueue: Station ${nowQ.stationId} - Position number: ${prevQ.queueNumber} -> ${nowQ.queueNumber}, Actual position: ${prevActualPosition} -> ${currentActualPosition}`);
                       
