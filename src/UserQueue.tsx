@@ -627,7 +627,7 @@ const UserQueue: React.FC = () => {
       myQueuesUnsubscribe();
       queuePopUnsubscribes.forEach(unsub => unsub());
     };
-  }, [userId, fetchStations, fetchMyQueues, stations]);
+  }, [userId, fetchStations, fetchMyQueues, stations, selected]);
 
   const joinQueue = async () => {
     if (!selected) return;
