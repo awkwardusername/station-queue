@@ -336,7 +336,11 @@ const UserQueue: React.FC = () => {
                     <span>
                       {n.type === 'removed' && (
                         <>
-                          Removed from <b>{n.station}</b> queue.
+                          Removed from <b>{n.station}</b> queue
+                          {typeof n.prevQueueNumber === 'number' && (
+                            <> (was position <b>{n.prevQueueNumber}</b>)</>
+                          )}
+                          .
                         </>
                       )}
                       {n.type === 'position' && (
