@@ -1,7 +1,6 @@
 // src/__tests__/PersonQueue.test.tsx
 import { beforeAll, describe, it, expect } from 'vitest';
 // src/__tests__/PersonQueue.test.tsx
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PersonQueue from '../PersonQueue';
