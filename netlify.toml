@@ -6,6 +6,9 @@
   functions = "netlify/functions"
   command = "npm test && npm run build"
 
+[mcp]
+  enabled = true
+
 [[redirects]]
   force = true
   from = "/api/*"
