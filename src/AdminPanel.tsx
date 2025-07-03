@@ -103,9 +103,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
     setResult(null);
     setLoading(true);
     try {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        setError('Station name cannot be empty or whitespace.');
+        setLoading(false);
+        return;
+      }
       const res = await api.post<{ id: string; name: string; managerId: string }>(
         '/admin/stations',
-        { secret, name },
+        { secret, name: trimmedName },
         { headers: { 'x-admin-secret': secret } }
       );
       setResult(res.data);
