@@ -1,5 +1,7 @@
 # Station Queue Web App
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/bb4be188-c231-453f-9b58-b4cdcce7acdc/deploy-status)](https://app.netlify.com/projects/station-queue/deploys)
+
 This project is a queue management system for stations, built with Vite, React, and TypeScript for the frontend, and Node.js/Express for the backend. It uses Prisma for database management and Netlify functions for serverless API endpoints. Ably is integrated for real-time queue updates.
 
 ## Roles
