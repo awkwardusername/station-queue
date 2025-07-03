@@ -183,8 +183,27 @@ app.post('/admin/stations', async (req, res) => {
   const dbSecret = await getAdminSecret();
   if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
   
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Name required' });
+  let name;
+  
+  // Handle Buffer body (Netlify issue)
+  if (typeof req.body === 'object' && Buffer.isBuffer(req.body)) {
+    try {
+      const parsed = JSON.parse(req.body.toString('utf8'));
+      name = parsed.name;
+      console.log('Create Station Debug: Parsed Buffer body', { name });
+    } catch (e) {
+      console.log('Create Station Debug: Failed to parse Buffer body', { error: e });
+      return res.status(400).json({ error: 'Invalid request body format', details: e.message });
+    }
+  } else {
+    name = req.body.name;
+    console.log('Create Station Debug: Regular body', { name, bodyType: typeof req.body });
+  }
+  
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    console.log('Create Station Debug: Name validation failed', { name, type: typeof name });
+    return res.status(400).json({ error: 'Name required' });
+  }
   const id = randomUUID();
   const managerId = randomUUID();
   try {
@@ -522,12 +541,6 @@ app.post('/queue/:stationId/pop', async (req, res) => {
         const userIndex = stationQueue.findIndex(sq => sq.userId === remainingUserId);
         const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
 
-        console.log(`Pop Queue Debug: User ${remainingUserId} in station ${q.stationId}:`);
-        console.log(`  - Queue number: ${q.position}`);
-        console.log(`  - User index in queue: ${userIndex}`);
-        console.log(`  - Actual position: ${actualPosition}`);
-        console.log(`  - Station queue:`, stationQueue.map(sq => `${sq.userId}:${sq.position}`));
-
         return {
           stationId: q.stationId,
           stationName: q.station.name,
@@ -560,7 +573,6 @@ app.post('/queue/:stationId/pop', async (req, res) => {
 // User: view all queues
 app.get('/my-queues', async (req, res) => {
   const userId = req.userId;
-  console.log(`My Queues Debug: userId from request: ${userId}`);
 
   if (!userId) {
     return res.status(400).json({ error: 'User ID required' });
@@ -583,12 +595,6 @@ app.get('/my-queues', async (req, res) => {
       // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
       const userIndex = stationQueue.findIndex(sq => sq.userId === userId);
       const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
-
-      console.log(`My Queues Debug: User ${userId} in station ${q.stationId}:`);
-      console.log(`  - Queue number: ${q.position}`);
-      console.log(`  - User index in queue: ${userIndex}`);
-      console.log(`  - Actual position: ${actualPosition}`);
-      console.log(`  - Station queue:`, stationQueue.map(sq => `${sq.userId}:${sq.position}`));
 
       return {
         stationId: q.stationId,
