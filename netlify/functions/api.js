@@ -15,7 +15,7 @@ let ably = null;
 
 // Helper to get configuration values from the Config table
 async function getConfigValue(key) {
-  const config = await prisma.config.findUnique({ where: { key } });
+  const config = await prisma.config.findUnique({ where: { key }, cacheStrategy: { ttl: 600 } });
   return config?.value;
 }
 
