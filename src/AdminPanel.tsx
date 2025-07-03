@@ -111,7 +111,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
       }
       const res = await api.post<{ id: string; name: string; managerId: string }>(
         '/admin/stations',
-        { secret, name: trimmedName },
+        { name: trimmedName },
         { headers: { 'x-admin-secret': secret } }
       );
       setResult(res.data);
