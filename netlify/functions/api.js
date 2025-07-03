@@ -22,35 +22,35 @@ async function getConfigValue(key) {
 // Helper to get and increment the last issued position for a station
 async function getNextPositionForStation(stationId) {
   const positionKey = `lastPosition:${stationId}`;
-  
+
   // Use a transaction to ensure we don't have race conditions
   return prisma.$transaction(async (tx) => {
     // Try to get the last position for this station
-    const lastPositionConfig = await tx.config.findUnique({ 
-      where: { key: positionKey } 
+    const lastPositionConfig = await tx.config.findUnique({
+      where: { key: positionKey }
     });
-    
+
     let lastPosition;
     if (!lastPositionConfig) {
       // If we don't have a last position, start from 99 (so next position will be 100)
       lastPosition = 99;
       // Create the initial record
-      await tx.config.create({ 
+      await tx.config.create({
         data: { key: positionKey, value: String(lastPosition) }
       });
     } else {
       lastPosition = parseInt(lastPositionConfig.value, 10);
     }
-    
+
     // Increment the position
     const nextPosition = lastPosition + 1;
-    
+
     // Update the last position in the database
     await tx.config.update({
       where: { key: positionKey },
       data: { value: String(nextPosition) }
     });
-    
+
     return nextPosition;
   });
 }
@@ -64,7 +64,7 @@ async function initializeAbly() {
       console.error('ABLY_API_KEY not found in database. Real-time updates will not work.');
       return null;
     }
-    
+
     console.log('Initializing Ably with backend API key from database');
     return new Ably.Rest({ key: apiKey });
   } catch (error) {
@@ -99,29 +99,29 @@ const publishToChannel = async (channelName, eventName, data, maxRetries = 3) =>
           throw new Error('Ably not initialized');
         }
       }
-      
+
       const channel = ably.channels.get(channelName);
       console.log(`Publishing to ${channelName}:${eventName}`, data);
-      
+
       const result = await channel.publish(eventName, data);
       console.log(`Successfully published to ${channelName}:${eventName}`);
       return result;
     } catch (error) {
       console.error(`Error publishing to ${channelName}:${eventName} (attempt ${retryCount + 1}):`, error);
-      
+
       if (retryCount < maxRetries) {
         const delay = 1000 * Math.pow(2, retryCount); // Exponential backoff
         console.log(`Retrying publish to ${channelName}:${eventName} in ${delay}ms`);
         await new Promise(resolve => setTimeout(resolve, delay));
-        
+
         // Reset ably instance on retry to ensure fresh connection
         if (retryCount > 0) {
           ably = null;
         }
-        
+
         return attemptPublish(retryCount + 1);
       }
-      
+
       console.error(`Failed to publish to ${channelName}:${eventName} after ${maxRetries + 1} attempts`);
       throw error;
     }
@@ -133,13 +133,13 @@ const publishToChannel = async (channelName, eventName, data, maxRetries = 3) =>
 // Helper to safely publish to multiple channels in parallel with error isolation
 const publishToChannelsParallel = async (publishPromises) => {
   const results = await Promise.allSettled(publishPromises);
-  
+
   results.forEach((result, index) => {
     if (result.status === 'rejected') {
       console.error(`Publishing failed for operation ${index + 1}:`, result.reason);
     }
   });
-  
+
   // Return the number of successful publishes
   return results.filter(result => result.status === 'fulfilled').length;
 };
@@ -179,9 +179,11 @@ async function getAdminSecret() {
 
 // Admin: create station
 app.post('/admin/stations', async (req, res) => {
-  const { secret, name } = req.body;
+  const secret = req.headers['x-admin-secret'];
   const dbSecret = await getAdminSecret();
   if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
+  
+  const { name } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const id = randomUUID();
   const managerId = randomUUID();
@@ -189,14 +191,14 @@ app.post('/admin/stations', async (req, res) => {
     const station = await prisma.station.create({
       data: { id, name, managerId }
     });
-    
+
     // Publish station creation event
     await publishToChannel(
-      CHANNEL_NAMES.STATIONS, 
-      EVENT_NAMES.STATION_CREATE, 
+      CHANNEL_NAMES.STATIONS,
+      EVENT_NAMES.STATION_CREATE,
       station
     );
-    
+
     res.json(station);
   } catch (err) {
     res.status(500).json({ error: 'DB error', details: err.message });
@@ -208,30 +210,30 @@ app.delete('/admin/stations/:id', async (req, res) => {
   const secret = req.headers['x-admin-secret'];
   const dbSecret = await getAdminSecret();
   if (secret !== dbSecret) return res.status(403).json({ error: 'Forbidden' });
-  const { id } = req.params;  
+  const { id } = req.params;
   try {
     console.log(`Deleting station ${id} and all associated data...`);
-    
+
     // Delete all queue entries for this station
     const deletedQueue = await prisma.queue.deleteMany({ where: { stationId: id } });
     console.log(`Deleted ${deletedQueue.count} queue entries`);
-    
+
     // Delete the lastPosition config entry for this station
     const positionKey = `lastPosition:${id}`;
     const deletedConfig = await prisma.config.deleteMany({ where: { key: positionKey } });
     console.log(`Deleted ${deletedConfig.count} config entries with key: ${positionKey}`);
-    
+
     // Delete the station itself
     await prisma.station.delete({ where: { id } });
     console.log(`Deleted station ${id}`);
-    
+
     // Publish station deletion event
     await publishToChannel(
-      CHANNEL_NAMES.STATIONS, 
-      EVENT_NAMES.STATION_DELETE, 
+      CHANNEL_NAMES.STATIONS,
+      EVENT_NAMES.STATION_DELETE,
       { id }
     );
-    
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'DB error' });
@@ -297,11 +299,11 @@ app.post('/queue/:stationId', async (req, res) => {
   const { stationId } = req.params;
   const userId = req.userId;
   console.log(`Join Queue Debug: userId from request: ${userId}, stationId: ${stationId}`);
-  
+
   if (!userId) {
     return res.status(400).json({ error: 'User ID required' });
   }
-  
+
   try {
     const station = await prisma.station.findUnique({
       where: { id: stationId },
@@ -344,13 +346,13 @@ app.post('/queue/:stationId', async (req, res) => {
         orderBy: { position: 'asc' },
         select: { userId: true, position: true }
       });
-      
+
       // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
       const userIndex = stationQueue.findIndex(sq => sq.userId === userId);
       const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
-      
+
       console.log(`Join Queue Debug: User ${userId} in station ${q.stationId} - position ${q.position}, actual position ${actualPosition}`);
-      
+
       return {
         stationId: q.stationId,
         stationName: q.station.name,
@@ -429,14 +431,14 @@ app.post('/queue/:stationId/pop', async (req, res) => {
       where: { stationId },
       orderBy: { position: 'asc' }
     });
-    
+
     if (!first) return res.json({ popped: null });
-    
+
     const poppedUserId = first.userId;
     console.log(`Pop Queue Debug: Popping user ${poppedUserId} from station ${stationId}`);
-    
+
     await prisma.queue.delete({ where: { stationId_userId: { stationId, userId: poppedUserId } } });
-    
+
     // Get updated queue
     // Get updated queue (only needed fields)
     const queue = await prisma.queue.findMany({
@@ -459,13 +461,13 @@ app.post('/queue/:stationId/pop', async (req, res) => {
         orderBy: { position: 'asc' },
         select: { userId: true, position: true }
       });
-      
+
       // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
       const userIndex = stationQueue.findIndex(sq => sq.userId === poppedUserId);
       const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
-      
+
       console.log(`Pop Queue Debug: Popped user ${poppedUserId} in station ${q.stationId} - position ${q.position}, actual position ${actualPosition}`);
-      
+
       return {
         stationId: q.stationId,
         stationName: q.station.name,
@@ -515,17 +517,17 @@ app.post('/queue/:stationId/pop', async (req, res) => {
           orderBy: { position: 'asc' },
           select: { userId: true, position: true }
         });
-        
+
         // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
         const userIndex = stationQueue.findIndex(sq => sq.userId === remainingUserId);
         const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
-        
+
         console.log(`Pop Queue Debug: User ${remainingUserId} in station ${q.stationId}:`);
         console.log(`  - Queue number: ${q.position}`);
         console.log(`  - User index in queue: ${userIndex}`);
         console.log(`  - Actual position: ${actualPosition}`);
         console.log(`  - Station queue:`, stationQueue.map(sq => `${sq.userId}:${sq.position}`));
-        
+
         return {
           stationId: q.stationId,
           stationName: q.station.name,
@@ -559,11 +561,11 @@ app.post('/queue/:stationId/pop', async (req, res) => {
 app.get('/my-queues', async (req, res) => {
   const userId = req.userId;
   console.log(`My Queues Debug: userId from request: ${userId}`);
-  
+
   if (!userId) {
     return res.status(400).json({ error: 'User ID required' });
   }
-  
+
   try {
     const queues = await prisma.queue.findMany({
       where: { userId },
@@ -577,17 +579,17 @@ app.get('/my-queues', async (req, res) => {
         orderBy: { position: 'asc' },
         select: { userId: true, position: true }
       });
-      
+
       // Find this user's actual position in line (1st, 2nd, 3rd, etc.)
       const userIndex = stationQueue.findIndex(sq => sq.userId === userId);
       const actualPosition = userIndex === -1 ? 0 : userIndex + 1;
-      
+
       console.log(`My Queues Debug: User ${userId} in station ${q.stationId}:`);
       console.log(`  - Queue number: ${q.position}`);
       console.log(`  - User index in queue: ${userIndex}`);
       console.log(`  - Actual position: ${actualPosition}`);
       console.log(`  - Station queue:`, stationQueue.map(sq => `${sq.userId}:${sq.position}`));
-      
+
       return {
         stationId: q.stationId,
         stationName: q.station.name,
@@ -595,7 +597,7 @@ app.get('/my-queues', async (req, res) => {
         actualPosition: actualPosition
       };
     }));
-    
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: 'DB error' });
