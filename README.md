@@ -7,6 +7,7 @@ A real-time queue management system for stations, built with modern web technolo
 ## 🚀 Features
 
 ### User Features
+
 - **No Login Required**: Users join queues instantly without registration (tracked by browser storage)
 - **Multiple Queues**: Join multiple station queues simultaneously
 - **Real-time Updates**: See your queue position update instantly via WebSocket connections
@@ -14,16 +15,19 @@ A real-time queue management system for stations, built with modern web technolo
 - **Mobile Responsive**: Works seamlessly on all devices
 
 ### Station Manager Features
+
 - **Station Dashboard**: View and manage your station's queue in real-time
 - **Queue Control**: Pop customers from the queue when served
 - **Station-specific Access**: Secure access via unique station manager ID
 
 ### Administrator Features
+
 - **Station Management**: Create and delete stations
 - **System Overview**: Monitor all stations in the system
 - **Secure Access**: Protected by admin secret key
 
 ### Technical Features
+
 - **Real-time Communication**: Powered by Ably for instant updates
 - **Fallback Polling**: Automatic fallback when WebSocket connection fails
 - **Smart Queue Numbering**: Positions start from 100 for better UX
@@ -95,16 +99,19 @@ npx prisma db seed
 This application uses two separate Ably API keys for security:
 
 #### Backend API Key (Server-side publishing)
+
 ```bash
 npm run set-backend-ably-key YOUR_BACKEND_ABLY_API_KEY
 ```
 
 #### Frontend API Key (Client-side subscribing)
+
 ```bash
 npm run set-frontend-ably-key YOUR_FRONTEND_ABLY_API_KEY
 ```
 
 **Security Notes:**
+
 - Backend key should have publish and subscribe capabilities
 - Frontend key should be limited to subscribe-only permissions
 - Keys are stored securely in the database
@@ -116,13 +123,14 @@ npm run netlify:dev
 ```
 
 The app will be available at:
+
 - Frontend: http://localhost:5173
 - API: http://localhost:8888/.netlify/functions/api
 
 
 If you are on Windows or where the Netlify CLI does not work, you may need to run the following command to start the server:
 
-```bash 
+```bash
 # Terminal 1: Start the development server
 node dev-server.js
 ```
@@ -133,9 +141,9 @@ npm run dev
 ```
 
 The app will be available at:
+
 - Frontend: http://localhost:5173
 - API: http://localhost:5000 (or as defined in your `.env` file)
-
 
 ## 🧪 Testing
 
@@ -178,6 +186,7 @@ npm run preview
 
 4. **Configure Ably Keys**:
    After deployment, SSH into your production database and run:
+
    ```sql
    INSERT INTO "Config" (key, value) VALUES 
    ('ABLY_API_KEY', 'your-backend-key'),
@@ -187,6 +196,7 @@ npm run preview
 ### Manual Deployment
 
 1. Build the project:
+
    ```bash
    npm run build
    ```
@@ -198,6 +208,7 @@ npm run preview
 ## 📱 Usage Guide
 
 ### For Users
+
 1. Visit the application URL
 2. Select a station from the dropdown
 3. Click "Join Queue"
@@ -205,12 +216,14 @@ npm run preview
 5. Wait for notifications when your turn approaches
 
 ### For Station Managers
+
 1. Navigate to `/person` or click "Manage Station"
 2. Enter your Station ID and Manager ID
 3. View real-time queue updates
 4. Click "Next Customer" to serve the next person
 
 ### For Administrators
+
 1. Navigate to `/admin` or click "Admin Panel"
 2. Enter the admin secret
 3. Create new stations with unique names
@@ -231,7 +244,7 @@ npm run cleanup-orphaned-keys
 
 ## 🏗️ Project Structure
 
-```
+```plain
 station-queue/
 ├── src/
 │   ├── components/        # Reusable UI components
@@ -257,13 +270,16 @@ station-queue/
 ## 🔧 Configuration
 
 ### API Configuration
+
 The application automatically detects the environment and configures the API URL:
+
 - **Development**: `http://localhost:5000`
 - **Production**: `/.netlify/functions/api`
 
 Override with `VITE_API_URL` environment variable if needed.
 
 ### Database Options
+
 - **PostgreSQL** (recommended for production)
 - **SQLite** (for local development)
 
