@@ -1,4 +1,5 @@
 import * as Ably from 'ably';
+import { getApiBaseUrl } from './config/api.config';
 
 // Channel names for different entities
 export const CHANNEL_NAMES = {
@@ -48,18 +49,6 @@ const notifyConnectionStateChange = (state: string) => {
       console.error('Error in connection state listener:', error);
     }
   });
-};
-
-// Helper function to determine API base URL (duplicated from api.ts to avoid circular dependencies)
-const getApiBaseUrl = () => {
-  if (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.port.startsWith('517') // Handle Vite's default ports (5173, 5174, etc)
-  ) {
-    return 'http://localhost:5000';
-  }
-  return '/.netlify/functions/api';
 };
 
 // Get Ably API key from the backend with retry mechanism

@@ -11,8 +11,8 @@ interface PersonQueueProps {
 }
 
 const PersonQueue: React.FC<PersonQueueProps> = () => {
-  const [stationId, setStationId] = useState(() => localStorage.getItem('personStationId') || '');
-  const [managerId, setManagerId] = useState(() => localStorage.getItem('personManagerId') || '');
+  const [stationId, setStationId] = useState(() => localStorage.getItem('personStationId') ?? '');
+  const [managerId, setManagerId] = useState(() => localStorage.getItem('personManagerId') ?? '');
   const [queue, setQueue] = useState<{ user_id: string; position: number }[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +21,7 @@ const PersonQueue: React.FC<PersonQueueProps> = () => {
   
   // Initialize Ably
   useEffect(() => {
-    const storedUserId = localStorage.getItem('userId') || '';
+    const storedUserId = localStorage.getItem('userId') ?? '';
     if (storedUserId) {
       const initializeAbly = async () => {
         try {
@@ -53,7 +53,7 @@ const PersonQueue: React.FC<PersonQueueProps> = () => {
       setQueue(res.data.queue);
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
-      setError(err.response?.data?.error || 'Error fetching queue');
+      setError(err.response?.data?.error ?? 'Error fetching queue');
       setQueue([]);
     } finally {
       setLoading(false);
@@ -71,7 +71,7 @@ const PersonQueue: React.FC<PersonQueueProps> = () => {
       await fetchQueue();
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } } };
-      setError(err.response?.data?.error || 'Error popping queue');
+      setError(err.response?.data?.error ?? 'Error popping queue');
     } finally {
       setLoading(false);
     }
@@ -147,7 +147,7 @@ const PersonQueue: React.FC<PersonQueueProps> = () => {
   }, [stationId, managerId]);
 
 
-  const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
+  const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name ?? '') : '';
 
   return (
     <div className="person-queue app-center">

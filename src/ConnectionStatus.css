@@ -45,6 +45,13 @@
   padding: 0.25rem;
   border-radius: 50%;
   transition: background-color 0.3s ease;
+  /* Reset button styles */
+  background: none;
+  border: none;
+  font-size: inherit;
+  color: inherit;
+  font-family: inherit;
+  line-height: 1;
 }
 
 .notification-bell:hover {

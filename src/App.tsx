@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 const UserQueue = lazy(() => import('./UserQueue'));
 const PersonQueue = lazy(() => import('./PersonQueue'));
 const AdminPanel = lazy(() => import('./AdminPanel'));
@@ -93,9 +92,8 @@ function App() {
       </div>
       
       {/* Global Connection Status Footer */}
-      <div
+      <output
         className="connection-status-footer"
-        role="status"
         aria-live="polite"
         aria-atomic="true"
       >
@@ -109,7 +107,7 @@ function App() {
             <span className="ms-1">{connectionStatusInfo.text}</span>
           </span>
         </div>
-      </div>
+      </output>
     </div>
   );
 }

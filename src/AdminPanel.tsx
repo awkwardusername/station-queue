@@ -12,7 +12,7 @@ interface AdminPanelProps {
 const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
   const [secret, setSecret] = useState(() => {
     // Initialize from localStorage if available
-    return localStorage.getItem(ADMIN_SECRET_KEY) || '';
+    return localStorage.getItem(ADMIN_SECRET_KEY) ?? '';
   });
   
   // Update localStorage when secret changes
@@ -32,7 +32,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   // Initialize Ably and check for saved admin secret
   useEffect(() => {
-    const userId = localStorage.getItem('userId') || '';
+    const userId = localStorage.getItem('userId') ?? '';
     if (userId) {
       const initializeAbly = async () => {
         try {
@@ -307,7 +307,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
                 <tr key={station.id}>
                   <td>{station.id}</td>
                   <td>{station.name}</td>
-                  <td>{station.managerId || '(not available)'} </td>
+                  <td>{station.managerId ?? '(not available)'} </td>
                   <td>
                     <div className="d-flex gap-2 flex-wrap">                      <button 
                         className="btn btn-primary btn-sm" 
