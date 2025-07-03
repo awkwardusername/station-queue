@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Suspense, lazy } from 'react';
 const UserQueue = lazy(() => import('./UserQueue'));
 const PersonQueue = lazy(() => import('./PersonQueue'));
@@ -7,9 +7,39 @@ import { initAbly, addConnectionStateListener, removeConnectionStateListener } f
 import './App.css';
 import './ConnectionStatus.css';
 
+// Connection status configuration
+const CONNECTION_STATUS_CONFIG = {
+  connected: {
+    icon: '🟢',
+    text: 'Live',
+    className: 'bg-success',
+    ariaLabel: 'Connected to real-time service'
+  },
+  connecting: {
+    icon: '🟡',
+    text: 'Connecting',
+    className: 'bg-warning',
+    ariaLabel: 'Connecting to real-time service'
+  },
+  disconnected: {
+    icon: '🔴',
+    text: 'Offline',
+    className: 'bg-danger',
+    ariaLabel: 'Disconnected from real-time service'
+  },
+  failed: {
+    icon: '🔴',
+    text: 'Failed',
+    className: 'bg-danger',
+    ariaLabel: 'Failed to connect to real-time service'
+  }
+} as const;
+
+type ConnectionState = keyof typeof CONNECTION_STATUS_CONFIG;
+
 function App() {
   const [view, setView] = useState<'user' | 'person' | 'admin'>('user');
-  const [connectionState, setConnectionState] = useState<string>('disconnected');
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
 
   // Initialize Ably when app starts
   useEffect(() => {
@@ -23,7 +53,13 @@ function App() {
   useEffect(() => {
     const connectionStateListener = (state: string) => {
       console.log('App: Connection state changed to:', state);
-      setConnectionState(state);
+      // Validate state before setting
+      if (state in CONNECTION_STATUS_CONFIG) {
+        setConnectionState(state as ConnectionState);
+      } else {
+        console.warn(`Unknown connection state: ${state}, defaulting to 'disconnected'`);
+        setConnectionState('disconnected');
+      }
     };
 
     addConnectionStateListener(connectionStateListener);
@@ -32,6 +68,11 @@ function App() {
       removeConnectionStateListener(connectionStateListener);
     };
   }, []);
+
+  // Memoize connection status configuration to prevent unnecessary re-renders
+  const connectionStatusInfo = useMemo(() => {
+    return CONNECTION_STATUS_CONFIG[connectionState] || CONNECTION_STATUS_CONFIG.disconnected;
+  }, [connectionState]);
 
   return (
     <div className="App app-outer-center">
@@ -52,20 +93,20 @@ function App() {
       </div>
       
       {/* Global Connection Status Footer */}
-      <div className="fixed-bottom d-flex justify-content-center" style={{pointerEvents: 'none', zIndex: 1000}}>
-        <div className="mb-3" style={{pointerEvents: 'auto'}}>
+      <div
+        className="connection-status-footer"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <div className="connection-status-container">
           <span
-            className={`badge connection-status ${
-              connectionState === 'connected' ? 'bg-success' :
-              connectionState === 'connecting' ? 'bg-warning' :
-              'bg-danger'
-            }`}
+            className={`badge connection-status ${connectionStatusInfo.className}`}
             title={`Real-time connection: ${connectionState}`}
+            aria-label={connectionStatusInfo.ariaLabel}
           >
-            {connectionState === 'connected' && '🟢 Live'}
-            {connectionState === 'connecting' && '🟡 Connecting'}
-            {connectionState === 'disconnected' && '🔴 Offline'}
-            {connectionState === 'failed' && '🔴 Failed'}
+            <span aria-hidden="true">{connectionStatusInfo.icon}</span>
+            <span className="ms-1">{connectionStatusInfo.text}</span>
           </span>
         </div>
       </div>

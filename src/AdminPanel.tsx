@@ -266,15 +266,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onSwitchView }) => {
           </button>
         </div>
         <div className="row mb-3">
-          <div className="col-12 col-md-6 mb-2 mb-md-0">            <input
-              className="form-control mb-2"
-              placeholder="Admin Secret"
-              value={secret}
-              onChange={e => handleSecretChange(e.target.value)}
-              type="password"
-              autoComplete="current-password"
-              disabled
-            />
+          <div className="col-12 col-md-6 mb-2 mb-md-0">
+            {/* Admin Secret input hidden when authenticated */}
           </div>
           <div className="col-12 col-md-6">
             <input

@@ -119,3 +119,60 @@
 .notification-dropdown li:hover {
   background-color: #f8f9fa;
 }
+
+/* Global Connection Status Footer */
+.connection-status-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1000;
+  padding: 0;
+}
+
+.connection-status-container {
+  margin-bottom: 1rem;
+  pointer-events: auto;
+}
+
+/* Media queries for responsive behavior */
+@media (max-width: 576px) {
+  .connection-status-footer {
+    padding: 0 0.5rem;
+  }
+  
+  .connection-status-container {
+    margin-bottom: 0.75rem;
+  }
+  
+  .connection-status {
+    font-size: 0.65em;
+  }
+}
+
+/* Ensure footer doesn't interfere with scrolling */
+@media (max-height: 600px) {
+  .connection-status-footer {
+    position: sticky;
+    bottom: 0;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .connection-status {
+    border: 1px solid currentColor;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .connection-status.bg-success,
+  .connection-status.bg-warning,
+  .connection-status.bg-danger {
+    animation: none;
+  }
+}

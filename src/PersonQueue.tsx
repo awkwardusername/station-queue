@@ -10,7 +10,7 @@ interface PersonQueueProps {
   onSwitchView?: (view: 'user' | 'person' | 'admin') => void;
 }
 
-const PersonQueue: React.FC<PersonQueueProps> = ({ onSwitchView }) => {
+const PersonQueue: React.FC<PersonQueueProps> = () => {
   const [stationId, setStationId] = useState(() => localStorage.getItem('personStationId') || '');
   const [managerId, setManagerId] = useState(() => localStorage.getItem('personManagerId') || '');
   const [queue, setQueue] = useState<{ user_id: string; position: number }[]>([]);
@@ -148,35 +148,12 @@ const PersonQueue: React.FC<PersonQueueProps> = ({ onSwitchView }) => {
 
 
   const stationName = stationId && stations.length > 0 ? (stations.find(s => s.id === stationId)?.name || '') : '';
-  // Check if we're coming from the admin panel
-  const [isFromAdmin, setIsFromAdmin] = useState(false);
-  
-  useEffect(() => {
-    // Check localStorage for admin secret to determine if we came from admin
-    const adminSecret = localStorage.getItem('adminSecret');
-    setIsFromAdmin(!!adminSecret);
-  }, []);
-
-  // Function to handle returning to admin panel
-  const handleReturnToAdmin = () => {
-    if (onSwitchView) {
-      onSwitchView('admin');
-    }
-  };
 
   return (
     <div className="person-queue app-center">
       <div className="container py-4 px-2 px-md-4">
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h2>Manage Station Queue</h2>
-          {isFromAdmin && onSwitchView && (
-            <button 
-              className="btn btn-outline-secondary" 
-              onClick={handleReturnToAdmin}
-            >
-              Return to Admin
-            </button>
-          )}
         </div>
         
         {stationName && (
@@ -225,6 +202,11 @@ const PersonQueue: React.FC<PersonQueueProps> = ({ onSwitchView }) => {
               </ol>
             </div>
             <button className="btn btn-warning w-100 w-md-auto" onClick={popQueue} disabled={loading}>Pop Queue</button>
+          </div>
+        )}
+        {queue.length === 0 && !loading && !error && stationId && managerId && (
+          <div className="alert alert-secondary mt-3 text-center">
+            Queue is empty.
           </div>
         )}
         {popped && <div className="alert alert-info mt-2">Popped user: {popped}</div>}

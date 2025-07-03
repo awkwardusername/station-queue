@@ -651,10 +651,10 @@ const UserQueue: React.FC = () => {
 
   return (
     <div className="user-queue app-center">
-      <div className="container py-4 px-2 px-md-4" style={{position: 'relative'}}>
+      <div className="container py-4 px-2 px-md-4 relative-position">
         {/* Fallback Polling Indicator - only show when polling is active */}
         {isUsingFallback && (
-          <div style={{position: 'absolute', top: 16, left: 24, zIndex: 1000}}>
+          <div className="polling-indicator">
             <span
               className="badge bg-info"
               title="Using fallback polling due to real-time connection issues"
@@ -665,7 +665,7 @@ const UserQueue: React.FC = () => {
         )}
         
         {/* Notification Bell */}
-        <div style={{position: 'absolute', top: 16, right: 24, zIndex: 1100}}>
+        <div className="notification-bell-container">
           <span
             className="notification-bell"
             tabIndex={0}
@@ -702,8 +702,8 @@ const UserQueue: React.FC = () => {
                   <li>No notifications</li>
                 )}
                 {notifications.map((n, i) => (
-                  <li key={n.ts + '-' + i} style={{display: 'flex', alignItems: 'flex-start', gap: '0.5rem'}}>
-                    <span style={{fontSize: '1.3em', marginTop: '0.1em'}}>
+                  <li key={n.ts + '-' + i} className="notification-list-item">
+                    <span className="notification-icon">
                       {n.type === 'removed' ? '❌' : n.type === 'position' ? '🔢' : '🔔'}
                     </span>
                     <span>
@@ -722,15 +722,16 @@ const UserQueue: React.FC = () => {
                         </>
                       )}
                       <br />
-                      <span style={{fontSize: '0.85em', color: '#888'}}>
-                        {new Date(n.ts).toLocaleTimeString()}
+                      <span className="notification-time">
+                        {n.ts ? new Date(n.ts).toLocaleTimeString() : ''}
                       </span>
                     </span>
                   </li>
                 ))}
               </ul>
-              <div style={{textAlign: 'right', padding: '0.5rem 1rem 0.2rem'}}>
+              <div className="notification-dropdown-footer">
                 <button
+                  type="button"
                   className="btn btn-sm btn-outline-secondary"
                   onClick={() => {
                     setNotifications([]);
@@ -756,6 +757,7 @@ const UserQueue: React.FC = () => {
           </div>
           <div className="col-12 col-md-6 d-flex align-items-end justify-content-md-start justify-content-center">
             <button
+              type="button"
               className="btn btn-primary btn-lg join-queue-btn-xl ms-md-2 w-100 w-md-auto"
               onClick={joinQueue}
               disabled={!selected || loading || queueNumber !== null}
@@ -767,8 +769,18 @@ const UserQueue: React.FC = () => {
                   : 'Join Queue'}
             </button>
           </div>
-        </div>        {queueNumber && (
-          <div className="alert alert-info">Your queue number: <b>{queueNumber}</b></div>
+        </div>        
+        {queueNumber && (
+          <div className="alert alert-info">
+            Your queue number for <b>
+              {(() => {
+                const found = myQueues.find(q => q.stationId === selected);
+                if (found) return found.stationName;
+                const station = stations.find(s => s.id === selected);
+                return station ? station.name : 'Station';
+              })()}
+            </b>: # <b>{queueNumber}</b>
+          </div>
         )}
         <h3 className="admin-stations-title mt-4">My Queues</h3>
         {lastUpdate && (
@@ -796,64 +808,7 @@ const UserQueue: React.FC = () => {
               )}
             </tbody>
           </table>
-        </div>
-        
-        {/* Footer with Test Button */}
-        <div className="mt-4 text-center border-top pt-3">
-          <button
-            className="btn btn-sm btn-outline-secondary"
-            onClick={() => {
-              // Test notification
-              const testNotification: Notification = {
-                msg: 'This is a test notification!',
-                ts: Date.now(),
-                type: 'position',
-                station: 'Test Station',
-                queueNumber: 1
-              };
-              
-              setNotifications(prev => {
-                const updated = [testNotification, ...prev].slice(0, 10);
-                localStorage.setItem('queueNotifications', JSON.stringify(updated));
-                return updated;
-              });
-              
-              setBellAnimate(true);
-              console.log('Test notification created');
-              
-              // Play test sound
-              try {
-                const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-                if (AudioContextClass) {
-                  const ctx = new AudioContextClass();
-                  const o = ctx.createOscillator();
-                  const g = ctx.createGain();
-                  o.type = 'sine';
-                  o.frequency.value = 1200;
-                  g.gain.value = 0.08;
-                  o.connect(g);
-                  g.connect(ctx.destination);
-                  o.start();
-                  o.stop(ctx.currentTime + 0.18);
-                  o.onended = () => {
-                    try {
-                      ctx.close();
-                    } catch {
-                      // Ignore close errors
-                    }
-                  };
-                } else {
-                  console.warn('AudioContext not supported, skipping test sound');
-                }
-              } catch (audioError) {
-                console.warn('Could not play test sound:', audioError);
-              }
-            }}
-            title="Test notification system"
-          >
-            🧪 Test Notifications
-          </button>
-        </div>
+        </div>    
       </div>
     </div>
   );
